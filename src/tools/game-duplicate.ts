@@ -39,14 +39,18 @@ function readGameFile(
   // Try pak VFS — path may start with DataXXX/ or not
   const pakVfs = PakVirtualFS.get(config.gamePath);
   if (pakVfs) {
-    if (pakVfs.exists(bare)) {
-      return { content: pakVfs.readTextFile(bare), resolvedPath: bare };
+    // Normalize the bare path for VFS lookup (lowercase, forward slashes)
+    const bareNorm = bare.replace(/\\/g, "/").toLowerCase();
+
+    if (pakVfs.exists(bareNorm)) {
+      return { content: pakVfs.readTextFile(bareNorm), resolvedPath: bareNorm };
     }
-    // Some paths in search results include a DataXXX/ prefix that the pak VFS doesn't need
-    // Try without it (already bare) — but also try finding via allFilePaths by suffix
-    const bareLower = bare.toLowerCase().replace(/\\/g, "/");
+
+    // VFS file index keys include DataXXX/ prefix. Search by suffix match.
+    // Use "/" + bareNorm as suffix to avoid partial-segment matches.
+    const suffix = "/" + bareNorm;
     for (const vfsPath of pakVfs.allFilePaths()) {
-      if (vfsPath.toLowerCase().endsWith(bareLower)) {
+      if (vfsPath === bareNorm || vfsPath.endsWith(suffix)) {
         return { content: pakVfs.readTextFile(vfsPath), resolvedPath: vfsPath };
       }
     }
