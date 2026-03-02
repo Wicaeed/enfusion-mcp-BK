@@ -56,7 +56,8 @@ export function registerScenarioTools(server: McpServer, client: WorkbenchClient
           .describe("Task description shown to the player in the task list."),
         position: z
           .string()
-          .describe("World position for the Area entity as 'x y z' (e.g. '1234 0 5678')."),
+          .optional()
+          .describe("World position for the Area entity as 'x y z' (e.g. '1234 0 5678'). Omit to place at the current camera position."),
         targetPrefab: z
           .string()
           .describe(
@@ -109,9 +110,22 @@ export function registerScenarioTools(server: McpServer, client: WorkbenchClient
         }
       }
 
+      // Resolve position — if not provided, query current camera position
+      let resolvedPosition = position;
+      if (!resolvedPosition) {
+        const camRes = await client.call<{ status: string; position?: string; message?: string }>("EMCP_WB_GetCameraPos", {});
+        if (camRes.status === "ok" && camRes.position) {
+          resolvedPosition = camRes.position;
+        } else {
+          return {
+            content: [{ type: "text" as const, text: `**scenario_create_objective failed**\nCould not get camera position: ${camRes.message ?? "unknown error"}. Pass an explicit 'position' parameter.` }],
+          };
+        }
+      }
+
       try {
         // 1. Place Area at position
-        await client.call("EMCP_WB_CreateEntity", { prefab: AREA_PREFAB, name: names.area, position });
+        await client.call("EMCP_WB_CreateEntity", { prefab: AREA_PREFAB, name: names.area, position: resolvedPosition });
         placed.push(names.area);
 
         // 2. Place LayerTask (world root, then reparent)
@@ -160,7 +174,7 @@ export function registerScenarioTools(server: McpServer, client: WorkbenchClient
           ...placed.map(n => `  - ${n}`),
           ``,
           `Task type: ${taskType}`,
-          `Position: ${position}`,
+          `Position: ${resolvedPosition}`,
           `Trigger radius: ${triggerRadius}m`,
           `Target (SlotKill): ${targetPrefab}`,
           `AI group (SlotAI): ${aiGroupPrefab}`,
