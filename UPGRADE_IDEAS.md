@@ -6,6 +6,19 @@ Ranked by impact-to-effort ratio. Based on full codebase audit of tools, data qu
 
 ---
 
+## Implementation Checklist
+
+After implementing any upgrade, complete **all** of the following before marking it done:
+
+1. **Tests** — Add or update tests for new/changed functionality. Run `npm run build && npm test` and ensure everything passes.
+2. **Tool descriptions** — If a tool's capabilities changed, update its `description` string in `src/tools/*.ts` (this is what the LLM sees when deciding which tool to use).
+3. **Prompts** — If the LLM needs to know about the new capability, update both `src/prompts/create-mod.ts` and `src/prompts/modify-mod.ts`.
+4. **README** — If user-facing tool descriptions changed or a new tool was added, update the tools table in `README.md`.
+5. **This file** — Mark the item as done: strikethrough the heading with `~~` and add `✅ Done (PR #N)`, and do the same in the Summary Table.
+6. **New tools** — If adding a new tool, register it in `src/server.ts` and add a row to the README tools table.
+
+---
+
 ## Tier 1: Quick Wins (Small Effort, High Impact)
 
 ### ~~1. Automatic Inheritance Context on Class Lookup~~ ✅ Done (PR #7)
