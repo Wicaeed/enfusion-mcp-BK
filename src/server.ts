@@ -46,6 +46,7 @@ import { registerWorkshopInfo } from "./tools/workshop-info.js";
 import { registerScenarioTools } from "./tools/wb-scenario.js";
 import { registerAnimationGraphInspect } from "./tools/animation-graph-inspect.js";
 import { registerAnimationGraphAuthor } from "./tools/animation-graph-author.js";
+import { registerAnimationGraphSetup } from "./tools/animation-graph-setup.js";
 import type { Config } from "./config.js";
 
 export function registerTools(server: McpServer, config: Config): void {
@@ -107,6 +108,7 @@ export function registerTools(server: McpServer, config: Config): void {
   registerWorkshopInfo(server, config);
   registerAnimationGraphInspect(server, config);
   registerAnimationGraphAuthor(server, config);
+  registerAnimationGraphSetup(server, config);
 
   // MCP Prompts
   registerCreateModPrompt(server, patterns);

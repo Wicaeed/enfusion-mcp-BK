@@ -1,0 +1,755 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import type { Config } from "../config.js";
+import { validateProjectPath } from "../utils/safe-path.js";
+
+interface VehicleConfig {
+  vehicleName: string;
+  vehicleType: string;
+  wheelCount: number;
+  hasTurret: boolean;
+  hasSuspensionIK: boolean;
+  hasShockAbsorbers: boolean;
+  hasSteeringLinkage: boolean;
+  seatTypes: string[];
+  dialList: string[];
+}
+
+// ── File generators (self-contained copy — do not import from animation-graph-author) ──
+
+function generateAgr(cfg: VehicleConfig): string {
+  const lines: string[] = [];
+
+  lines.push("AnimSrcGraph {");
+  lines.push(
+    ` AnimSetTemplate "{PLACEHOLDER_GUID}${cfg.vehicleType}/${cfg.vehicleName}/workspaces/${cfg.vehicleName}.ast"`
+  );
+  lines.push(` ControlTemplate AnimSrcGCT "{PLACEHOLDER_GUID_2}" {`);
+
+  lines.push(`  Variables {`);
+
+  lines.push(`   AnimSrcGCTVarFloat VehicleSteering {`);
+  lines.push(`    MinValue -1`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat VehicleThrottle {`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat VehicleClutch {`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat VehicleBrake {`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat VehicleAccelerationLR {`);
+  lines.push(`    MinValue -1`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat VehicleAccelerationFB {`);
+  lines.push(`    MinValue -1`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat LookX {`);
+  lines.push(`    MinValue -180`);
+  lines.push(`    MaxValue 180`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat LookY {`);
+  lines.push(`    MinValue -180`);
+  lines.push(`    MaxValue 180`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarInt SeatPositionType {`);
+  lines.push(`    MaxValue 10`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat AimY {`);
+  lines.push(`    MinValue -100`);
+  lines.push(`    MaxValue 100`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarBool Horn {`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat VehicleHandBrake {`);
+  lines.push(`    MaxValue 2`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarBool IsDriver {`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat SpineAccelerationFB {`);
+  lines.push(`    MinValue -1`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat Vehicle_Wobble {`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat SpineAccelerationLR {`);
+  lines.push(`    MinValue -1`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat AimX {`);
+  lines.push(`    MinValue -100`);
+  lines.push(`    MaxValue 100`);
+  lines.push(`   }`);
+
+  for (let i = 0; i < cfg.wheelCount; i++) {
+    lines.push(`   AnimSrcGCTVarFloat suspension_${i} {`);
+    lines.push(`    MinValue -1`);
+    lines.push(`    MaxValue 1`);
+    lines.push(`   }`);
+  }
+
+  lines.push(`   AnimSrcGCTVarFloat Suspension_dumping {`);
+  lines.push(`    MinValue -1`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat Suspension_shake {`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat YawAngle {`);
+  lines.push(`    MinValue -360`);
+  lines.push(`    MaxValue 360`);
+  lines.push(`   }`);
+
+  for (let i = 0; i < cfg.wheelCount; i++) {
+    lines.push(`   AnimSrcGCTVarFloat wheel_${i} {`);
+    lines.push(`    MinValue -360`);
+    lines.push(`    MaxValue 360`);
+    lines.push(`   }`);
+  }
+
+  lines.push(`   AnimSrcGCTVarFloat steering {`);
+  lines.push(`    MinValue -50`);
+  lines.push(`    MaxValue 50`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat Gearbox_RPM {`);
+  lines.push(`    MinValue -10000`);
+  lines.push(`    MaxValue 10000`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat Engine_RPM {`);
+  lines.push(`    MaxValue 10000`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat WaterLevel {`);
+  lines.push(`    MaxValue 100`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat IsSwimming {`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat IsInVehicle {`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat SPEED {`);
+  lines.push(`    MinValue 0`);
+  lines.push(`    MaxValue 250`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat Speed_dumping {`);
+  lines.push(`    MaxValue 250`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat POWER_IO {`);
+  lines.push(`    DefaultValue 1`);
+  lines.push(`    MaxValue 1`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat LocalTime {`);
+  lines.push(`    DefaultValue 100000000`);
+  lines.push(`    MaxValue 100000000`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarBool TurnOut {`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat Yaw {`);
+  lines.push(`    MinValue -180`);
+  lines.push(`    MaxValue 180`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarFloat Pitch {`);
+  lines.push(`    MinValue -50`);
+  lines.push(`    MaxValue 80`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarInt VehicleDoorState {`);
+  lines.push(`    MaxValue 298754968`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTVarInt VehicleDoorType {`);
+  lines.push(`    MaxValue 298754968`);
+  lines.push(`   }`);
+
+  if (cfg.hasTurret) {
+    lines.push(`   AnimSrcGCTVarFloat TurretRot_Antennas {`);
+    lines.push(`    DefaultValue 0`);
+    lines.push(`    MinValue -1`);
+    lines.push(`    MaxValue 1`);
+    lines.push(`   }`);
+  }
+
+  if (cfg.seatTypes.includes("gunner")) {
+    lines.push(`   AnimSrcGCTVarFloat Gunner_sights_cover {`);
+    lines.push(`    DefaultValue -0.71`);
+    lines.push(`    MinValue -0.71`);
+    lines.push(`    MaxValue 1.4`);
+    lines.push(`   }`);
+  }
+
+  lines.push(`  }`);
+
+  lines.push(`  Commands {`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_SwitchSeat {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Unconscious {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Unconscious_Exit {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Death {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_OpenDoor {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Wheeled_Action {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Lights {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_GetIn {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_GetOut {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_GearSwitch {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_Engine_StartStop {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_HandBrake {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_OpenDoor {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_CloseDoor {`);
+  lines.push(`   }`);
+  lines.push(`   AnimSrcGCTCmd CMD_Vehicle_FinishActionQueue {`);
+  lines.push(`   }`);
+  lines.push(`  }`);
+
+  lines.push(`  IkChains {`);
+
+  lines.push(`   AnimSrcGCTIkChain LeftLeg {`);
+  lines.push(`    Joints {`);
+  lines.push(`     "leftleg"`);
+  lines.push(`     "leftlegtwist"`);
+  lines.push(`     "leftknee"`);
+  lines.push(`     "leftkneetwist"`);
+  lines.push(`     "leftfoot"`);
+  lines.push(`    }`);
+  lines.push(`    MiddleJoint "leftknee"`);
+  lines.push(`    ChainAxis "+y"`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTIkChain RightLeg {`);
+  lines.push(`    Joints {`);
+  lines.push(`     "rightleg"`);
+  lines.push(`     "rightlegtwist"`);
+  lines.push(`     "rightknee"`);
+  lines.push(`     "rightkneetwist"`);
+  lines.push(`     "rightfoot"`);
+  lines.push(`    }`);
+  lines.push(`    MiddleJoint "rightknee"`);
+  lines.push(`    ChainAxis "-y"`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTIkChain LeftArm {`);
+  lines.push(`    Joints {`);
+  lines.push(`     "leftarm"`);
+  lines.push(`     "leftarmtwist"`);
+  lines.push(`     "leftforearm"`);
+  lines.push(`     "leftforearmtwist"`);
+  lines.push(`     "lefthand"`);
+  lines.push(`    }`);
+  lines.push(`    MiddleJoint "leftforearm"`);
+  lines.push(`    ChainAxis "+y"`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTIkChain RightArm {`);
+  lines.push(`    Joints {`);
+  lines.push(`     "rightarm"`);
+  lines.push(`     "rightarmtwist"`);
+  lines.push(`     "rightforearm"`);
+  lines.push(`     "rightforearmtwist"`);
+  lines.push(`     "righthand"`);
+  lines.push(`    }`);
+  lines.push(`    MiddleJoint "rightforearm"`);
+  lines.push(`    ChainAxis "-y"`);
+  lines.push(`   }`);
+
+  if (cfg.hasSuspensionIK) {
+    for (let i = 0; i < cfg.wheelCount; i++) {
+      lines.push(`   AnimSrcGCTIkChain suspension${i} {`);
+      lines.push(`    Joints {`);
+      lines.push(`     "v_suspension${i}"`);
+      lines.push(`    }`);
+      lines.push(`   }`);
+    }
+  }
+
+  if (cfg.hasShockAbsorbers) {
+    const rearStart = Math.floor(cfg.wheelCount / 2);
+    for (let i = rearStart; i < cfg.wheelCount; i++) {
+      lines.push(`   AnimSrcGCTIkChain shock_absorber${i} {`);
+      lines.push(`    Joints {`);
+      lines.push(`     "v_shock_absorber${i}"`);
+      lines.push(`    }`);
+      lines.push(`   }`);
+      lines.push(`   AnimSrcGCTIkChain shock_absorber_ikTarget${i} {`);
+      lines.push(`    Joints {`);
+      lines.push(`     "v_shock_absorber_ikTarget${i}"`);
+      lines.push(`    }`);
+      lines.push(`   }`);
+    }
+  }
+
+  if (cfg.hasSteeringLinkage) {
+    const frontCount = Math.floor(cfg.wheelCount / 2);
+    for (let i = 0; i < frontCount; i++) {
+      lines.push(`   AnimSrcGCTIkChain steering_axis_suspension${i} {`);
+      lines.push(`    Joints {`);
+      lines.push(`     "v_steering_axis_suspension${i}"`);
+      lines.push(`    }`);
+      lines.push(`   }`);
+      lines.push(`   AnimSrcGCTIkChain steering_axis_body${i} {`);
+      lines.push(`    Joints {`);
+      lines.push(`     "v_steering_axis_body${i}"`);
+      lines.push(`    }`);
+      lines.push(`   }`);
+    }
+  }
+
+  lines.push(`  }`);
+
+  lines.push(`  BoneMasks {`);
+
+  lines.push(`   AnimSrcGCTBoneMask Chassis {`);
+  lines.push(`    Bones {`);
+
+  const axleCount = cfg.wheelCount / 2;
+  for (let axle = 1; axle <= axleCount; axle++) {
+    const axleStr = String(axle).padStart(2, "0");
+    lines.push(`     "v_wheel_L${axleStr}"`);
+    lines.push(`     "v_wheel_R${axleStr}"`);
+  }
+
+  if (cfg.hasSuspensionIK) {
+    for (let i = 0; i < cfg.wheelCount; i++) {
+      lines.push(`     "v_suspension${i}"`);
+    }
+  }
+
+  lines.push(`    }`);
+  lines.push(`   }`);
+
+  lines.push(`   AnimSrcGCTBoneMask Body {`);
+  lines.push(`    Bones {`);
+  lines.push(`    }`);
+  lines.push(`   }`);
+
+  if (cfg.hasTurret) {
+    lines.push(`   AnimSrcGCTBoneMask Turret {`);
+    lines.push(`    Bones {`);
+    lines.push(`    }`);
+    lines.push(`   }`);
+    lines.push(`   AnimSrcGCTBoneMask Turret_Pose {`);
+    lines.push(`    Bones {`);
+    lines.push(`     "v_root"`);
+    lines.push(`     "v_turret_slot"`);
+    lines.push(`     "v_turret_01"`);
+    lines.push(`    }`);
+    lines.push(`   }`);
+  }
+
+  lines.push(`  }`);
+
+  lines.push(`  GlobalTags {`);
+  lines.push(`   "VEHICLE"`);
+  lines.push(`   "WHEELED"`);
+  lines.push(`   "${cfg.vehicleName.toUpperCase()}"`);
+  lines.push(`  }`);
+
+  lines.push(` }`);
+  lines.push(` Debug AnimSrcGD "{PLACEHOLDER_GUID_3}" {`);
+  lines.push(` }`);
+  lines.push(` GraphFilesResourceNames {`);
+  lines.push(` }`);
+  lines.push(` DefaultRunNode "MasterControl"`);
+  lines.push(`}`);
+
+  return lines.join("\n");
+}
+
+function generateAst(cfg: VehicleConfig): string {
+  const seatGroupMap: Record<string, string> = {
+    driver: "Driver",
+    gunner: "Gunner",
+    commander: "Commander",
+    passenger: "Passenger",
+  };
+
+  const animsByGroup: Record<string, string[]> = {
+    Driver: ["Idle", "Drive", "GetIn", "GetOut", "Death"],
+    Gunner: ["Idle", "Aim", "GetIn", "GetOut", "Death"],
+    Commander: ["Idle", "GetIn", "GetOut", "Death"],
+    Passenger: ["Idle", "GetIn", "GetOut", "Death"],
+  };
+
+  const lines: string[] = [];
+  lines.push("AnimSetTemplateSource {");
+  lines.push(" Groups {");
+
+  for (const seatType of cfg.seatTypes) {
+    const groupName = seatGroupMap[seatType] ?? seatType;
+    const anims = animsByGroup[groupName] ?? ["Idle", "GetIn", "GetOut", "Death"];
+
+    lines.push(`  AnimSetTemplateSource_AnimationGroup "{PLACEHOLDER_GUID}" {`);
+    lines.push(`   Name "${groupName}"`);
+    lines.push(`   Animations {`);
+    for (const anim of anims) {
+      lines.push(`    "${anim}"`);
+    }
+    lines.push(`   }`);
+    lines.push(`   Columns {`);
+    lines.push(`    "Default"`);
+    lines.push(`   }`);
+    lines.push(`  }`);
+  }
+
+  lines.push(" }");
+  lines.push("}");
+
+  return lines.join("\n");
+}
+
+// ── Instruction generators ────────────────────────────────────────────────────
+
+function generateAgfInstructions(cfg: VehicleConfig): string {
+  const parts: string[] = [];
+
+  parts.push(`## AGF Node Graph — Workbench UI Instructions`);
+  parts.push(``);
+  parts.push(`These nodes must be added via the Animation Editor UI in Workbench.`);
+  parts.push(`Do NOT edit the .agf file directly — Workbench re-serializes it on open.`);
+  parts.push(``);
+  parts.push(`### 1. Open the Animation Editor`);
+  parts.push(`- In Workbench, double-click your ${cfg.vehicleName}.agr file`);
+  parts.push(`- Go to Edit -> New Graph File, save as ${cfg.vehicleName}.agf in the same folder`);
+  parts.push(`- The AGF will appear in GraphFilesResourceNames automatically`);
+  parts.push(``);
+  parts.push(`### 2. Create the Master Sheet`);
+  parts.push(`- In the Animation Editor, you should see a default sheet`);
+  parts.push(`- Rename it to "Master" (right-click the sheet tab)`);
+  parts.push(``);
+  parts.push(`### 3. Add the Master Queue Node`);
+  parts.push(`- Right-click canvas -> Add Node -> Queue`);
+  parts.push(`- Name it: MasterControl`);
+  parts.push(`- This is your DefaultRunNode (must match AGR setting)`);
+  parts.push(`- Set BlendInTime: 0, BlendOutTime: 0`);
+  parts.push(``);
+  parts.push(`### 4. Add Sleep Optimization Node`);
+  parts.push(`- Right-click -> Add Node -> Sleep`);
+  parts.push(`- Name it: MasterSleep`);
+  parts.push(`- AwakeExpr: IsInVehicle`);
+  parts.push(`- Timeout: 2`);
+  parts.push(`- Connect MasterQueue.Child -> MasterSleep`);
+  parts.push(``);
+  parts.push(`### 5. Chassis Branch — Wheel Rotation`);
+  parts.push(`Add one AnimSrcNodeProcTransform per wheel:`);
+
+  const axleCount = Math.floor(cfg.wheelCount / 2);
+  let wheelIndex = 0;
+  for (let axle = 1; axle <= axleCount; axle++) {
+    const axleStr = String(axle).padStart(2, "0");
+    const leftIdx = wheelIndex;
+    const rightIdx = wheelIndex + 1;
+    parts.push(`- Right-click -> Add Node -> Procedural (AnimSrcNodeProcTransform)`);
+    parts.push(`  Name: WheelLeft${axle}Rot`);
+    parts.push(`  Bone: v_wheel_L${axleStr}`);
+    parts.push(`  Op: Rotate, Space: Local`);
+    parts.push(`  Amount: wheel_${leftIdx}`);
+    parts.push(`- Right-click -> Add Node -> Procedural (AnimSrcNodeProcTransform)`);
+    parts.push(`  Name: WheelRight${axle}Rot`);
+    parts.push(`  Bone: v_wheel_R${axleStr}`);
+    parts.push(`  Op: Rotate, Space: Local`);
+    parts.push(`  Amount: wheel_${rightIdx}`);
+    wheelIndex += 2;
+  }
+  parts.push(`Note: If wheels spin backwards, negate the amount expression (e.g. -wheel_0).`);
+
+  if (cfg.hasSuspensionIK) {
+    parts.push(``);
+    parts.push(`### 6. Suspension IK`);
+    parts.push(`For each wheel add a paired IK2Target + IK2 node:`);
+    for (let i = 0; i < cfg.wheelCount; i++) {
+      parts.push(`- Add Node -> IK2Target, name: SuspensionTarget${i}`);
+      parts.push(`  Variable driving target position: suspension_${i}`);
+      parts.push(`- Add Node -> IK2, name: SuspensionIK${i}`);
+      parts.push(`  IK2.Child -> (source pose node)`);
+      parts.push(`  IK2.Chains -> IkChain: suspension${i}`);
+      parts.push(`  Set solver: TwoBoneSolver`);
+    }
+    parts.push(`Bone names in IK chains must use v_suspension${0}..${cfg.wheelCount - 1} (v_ prefix mandatory).`);
+  }
+
+  if (cfg.hasSteeringLinkage) {
+    parts.push(``);
+    parts.push(`### 7. Steering Linkage`);
+    parts.push(`- Add Node -> Procedural`);
+    parts.push(`  Bone: v_steering_axis_body0, v_steering_axis_body1`);
+    parts.push(`  Op: Rotate, Space: Local`);
+    parts.push(`  Amount: steering`);
+  }
+
+  if (cfg.dialList.length > 0) {
+    parts.push(``);
+    parts.push(`### 8. Dials / Gauges`);
+    for (const dial of cfg.dialList) {
+      parts.push(`- Add Node -> Pose`);
+      parts.push(`  Source: "GroupName.Column.AnimName" (replace with your animation names)`);
+      parts.push(`  Expression: clamp(${dial} / maxValue, 0, 1)`);
+      parts.push(`  0 = first frame (min position), 1 = last frame (max position)`);
+    }
+    parts.push(`All dial positions should be baked into a single animation as keyframes.`);
+  }
+
+  if (cfg.hasTurret) {
+    parts.push(``);
+    parts.push(`### 9. Turret Rotation`);
+    parts.push(`- Add Node -> Procedural`);
+    parts.push(`  Bone: v_turret_01`);
+    parts.push(`  Op: Rotate, Space: Model`);
+    parts.push(`  Amount: YawAngle (horizontal rotation)`);
+    parts.push(`- Add a second Procedural node for gun elevation:`);
+    parts.push(`  Bone: (gun bone, e.g. v_gun_01)`);
+    parts.push(`  Op: Rotate, Space: Local`);
+    parts.push(`  Amount: AimY`);
+  }
+
+  parts.push(``);
+  const seatSectionNum = cfg.hasTurret ? 10 : cfg.dialList.length > 0 ? 9 : cfg.hasSteeringLinkage ? 8 : cfg.hasSuspensionIK ? 7 : 6;
+  parts.push(`### ${seatSectionNum}. Character Seat State Machine`);
+  parts.push(`- Add Node -> State Machine, name: SeatStateMachine`);
+  for (let i = 0; i < cfg.seatTypes.length; i++) {
+    const seat = cfg.seatTypes[i];
+    const stateName = seat.charAt(0).toUpperCase() + seat.slice(1);
+    parts.push(`- Add Node -> State, name: ${stateName}State`);
+    parts.push(`  Transition condition: SeatPositionType == ${i}`);
+    parts.push(`  Each state wraps a Queue for action commands (GetIn, GetOut, Death, etc.)`);
+  }
+  parts.push(`- Add IK2Target + IK2 nodes for hand placement on steering wheel / controls:`);
+  parts.push(`  LHandIKTarget -> LeftArm chain`);
+  parts.push(`  RHandIKTarget -> RightArm chain`);
+  parts.push(`  LeftLeg IK target -> LeftLeg chain`);
+  parts.push(`  RightLeg IK target -> RightLeg chain`);
+
+  parts.push(``);
+  parts.push(`### ${seatSectionNum + 1}. Connect the Graph`);
+  parts.push(`- MasterSleep.Child -> [top of chassis branch]`);
+  parts.push(`- All chassis nodes feed upward to MasterControl`);
+  parts.push(`- Seat state machine runs in parallel via a Blend node if needed`);
+  parts.push(`- DefaultRunNode in AGR must exactly match "MasterControl"`);
+
+  return parts.join("\n");
+}
+
+function generatePrefabInstructions(cfg: VehicleConfig): string {
+  const wheelVars = Array.from({ length: cfg.wheelCount }, (_, i) => `wheel_${i}`).join(", ");
+  const suspVars = Array.from({ length: cfg.wheelCount }, (_, i) => `suspension_${i}`).join(", ");
+
+  const parts: string[] = [];
+  parts.push(`## Prefab Component Setup`);
+  parts.push(``);
+  parts.push(`Add to your vehicle prefab in World Editor / Prefab Editor:`);
+  parts.push(``);
+  parts.push(`1. Add component: VehicleAnimationComponent`);
+  parts.push(`   - AnimGraph: {GUID}path/to/${cfg.vehicleName}.agr  (set after Workbench registration)`);
+  parts.push(`   - AnimInstance: {GUID}path/to/${cfg.vehicleName}.asi  (create .asi after .ast is ready)`);
+  parts.push(`   - AlwaysActive: 1  (set to 1 if vehicle should animate without an occupant)`);
+  parts.push(``);
+  parts.push(`2. The .asi file must reference your .ast and map each animation group to .anm files:`);
+  parts.push(`   - Create via Animation Editor -> New Instance`);
+  parts.push(`   - Map each group (${cfg.seatTypes.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(", ")}) and column (Default) to .anm files`);
+  parts.push(``);
+  parts.push(`3. VehicleAnimationComponent automatically feeds these variables from physics:`);
+  parts.push(`   ${wheelVars},`);
+  parts.push(`   ${suspVars}, steering, Engine_RPM, SPEED,`);
+  parts.push(`   VehicleAccelerationFB/LR, YawAngle, Yaw, Pitch, IsDriver, SeatPositionType, etc.`);
+  parts.push(`   You do NOT need script for standard vehicle variables.`);
+
+  return parts.join("\n");
+}
+
+function generateChecklist(cfg: VehicleConfig): string {
+  const parts: string[] = [];
+  parts.push(`## Verification Checklist`);
+  parts.push(``);
+  parts.push(`After setup, verify in Workbench:`);
+  parts.push(``);
+  parts.push(`1. AGR opens without errors in Animation Editor`);
+  parts.push(`   [ ] Variables list shows all expected variables`);
+  parts.push(`   [ ] IK chains list shows all expected chains`);
+  parts.push(`   [ ] DefaultRunNode = "MasterControl"`);
+  parts.push(``);
+  parts.push(`2. AGF node graph loads`);
+  parts.push(`   [ ] MasterControl Queue node is present`);
+  parts.push(`   [ ] No "missing node" warnings in editor`);
+  parts.push(``);
+  parts.push(`3. In-game verification (Workbench Play mode):`);
+  parts.push(`   [ ] Open Animation Editor -> Live Debug tab`);
+  parts.push(`   [ ] Add vehicle to scene, enter play mode`);
+  parts.push(`   [ ] Check variable values update as vehicle moves:`);
+  parts.push(`     - wheel_0..${cfg.wheelCount - 1} update while driving`);
+  if (cfg.hasSuspensionIK) {
+    parts.push(`     - suspension_0..${cfg.wheelCount - 1} change over terrain`);
+  }
+  parts.push(`     - steering changes on turn`);
+  parts.push(`   [ ] Visual check: wheels rotate in correct direction`);
+  if (cfg.hasSuspensionIK) {
+    parts.push(`   [ ] Visual check: suspension bones move with terrain`);
+  }
+  if (cfg.hasTurret) {
+    parts.push(`   [ ] Turret rotates with YawAngle variable`);
+  }
+  if (cfg.dialList.length > 0) {
+    parts.push(`   [ ] Dial bones move with variable changes`);
+  }
+  parts.push(``);
+  parts.push(`4. Seat animations:`);
+  parts.push(`   [ ] GetIn/GetOut animations play on entry/exit`);
+  parts.push(`   [ ] Driver idle/drive animations blend correctly`);
+  if (cfg.seatTypes.includes("gunner")) {
+    parts.push(`   [ ] Gunner animations work in turret seat`);
+  }
+  parts.push(``);
+  parts.push(`Common issues:`);
+  parts.push(`- Wheels spin backwards: negate the wheel_N expression (Amount: -wheel_0)`);
+  if (cfg.hasSuspensionIK) {
+    parts.push(`- Suspension not moving: check IK chain bone names match v_suspension${0}..${cfg.wheelCount - 1} exactly`);
+  }
+  parts.push(`- Graph not running: verify DefaultRunNode name matches MasterControl Queue node name`);
+  parts.push(`- Variables stuck at 0: ensure VehicleAnimationComponent (not AnimationControllerComponent) is used`);
+
+  return parts.join("\n");
+}
+
+// ── Tool registration ─────────────────────────────────────────────────────────
+
+export function registerAnimationGraphSetup(server: McpServer, config: Config): void {
+  server.registerTool(
+    "animation_graph_setup",
+    {
+      description:
+        "Full guided workflow wizard for setting up a vehicle animation graph in Arma Reforger. " +
+        "Generates .agr and .ast scaffold files, provides step-by-step Workbench UI instructions " +
+        "for building the AGF node graph, prefab component setup, and verification checklist. " +
+        "PRIMARY entry point for: 'set up vehicle animation', 'create animation graph for vehicle', " +
+        "'vehicle anim graph from scratch', 'how do I set up wheel/suspension animation'.",
+      inputSchema: {
+        vehicleName: z.string().describe("Vehicle name (e.g. 'MyTruck')."),
+        vehicleType: z.enum(["wheeled", "tracked", "helicopter", "boat"]).default("wheeled"),
+        wheelCount: z.number().int().min(2).max(8).default(4),
+        hasTurret: z.boolean().default(false),
+        hasSuspensionIK: z.boolean().default(true),
+        hasShockAbsorbers: z.boolean().default(false),
+        hasSteeringLinkage: z.boolean().default(false),
+        seatTypes: z
+          .array(z.enum(["driver", "gunner", "commander", "passenger"]))
+          .default(["driver"]),
+        dialList: z.array(z.string()).default([]),
+        outputPath: z.string().describe("Destination folder within mod project."),
+        modName: z.string().optional(),
+        projectPath: z.string().optional(),
+        step: z
+          .enum(["all", "agr", "agf_instructions", "prefab_setup", "checklist"])
+          .default("all")
+          .describe("Which section to return. 'all' returns everything."),
+      },
+    },
+    async (opts) => {
+      const cfg: VehicleConfig = {
+        vehicleName: opts.vehicleName,
+        vehicleType: opts.vehicleType,
+        wheelCount: opts.wheelCount,
+        hasTurret: opts.hasTurret,
+        hasSuspensionIK: opts.hasSuspensionIK,
+        hasShockAbsorbers: opts.hasShockAbsorbers,
+        hasSteeringLinkage: opts.hasSteeringLinkage,
+        seatTypes: opts.seatTypes,
+        dialList: opts.dialList,
+      };
+
+      const parts: string[] = [];
+
+      if (opts.step === "all" || opts.step === "agr") {
+        const basePath = opts.projectPath || config.projectPath;
+        if (basePath) {
+          try {
+            const agrContent = generateAgr(cfg);
+            const astContent = generateAst(cfg);
+            const agrPath = validateProjectPath(
+              basePath,
+              `${opts.outputPath}/${opts.vehicleName}.agr`
+            );
+            const astPath = validateProjectPath(
+              basePath,
+              `${opts.outputPath}/${opts.vehicleName}.ast`
+            );
+            mkdirSync(dirname(agrPath), { recursive: true });
+            writeFileSync(agrPath, agrContent, "utf-8");
+            writeFileSync(astPath, astContent, "utf-8");
+            parts.push(
+              `## Step 1: AGR + AST Files Generated\n- ${opts.outputPath}/${opts.vehicleName}.agr\n- ${opts.outputPath}/${opts.vehicleName}.ast\nRegister both files in Workbench to assign GUIDs.`
+            );
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            parts.push(`## Step 1: AGR + AST — Error\n${msg}`);
+          }
+        } else {
+          parts.push(
+            `## Step 1: AGR + AST — Skipped\nNo project path configured. Set ENFUSION_PROJECT_PATH or provide projectPath.`
+          );
+        }
+      }
+
+      if (opts.step === "all" || opts.step === "agf_instructions") {
+        parts.push(generateAgfInstructions(cfg));
+      }
+
+      if (opts.step === "all" || opts.step === "prefab_setup") {
+        parts.push(generatePrefabInstructions(cfg));
+      }
+
+      if (opts.step === "all" || opts.step === "checklist") {
+        parts.push(generateChecklist(cfg));
+      }
+
+      return {
+        content: [{ type: "text", text: parts.join("\n\n---\n\n") }],
+      };
+    }
+  );
+}

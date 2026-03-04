@@ -322,7 +322,8 @@ export function registerAnimationGraphInspect(
         "Returns structured info: variables with ranges, IK chains, bone masks, commands, node types. " +
         "Use to audit an existing vehicle animation graph before modifying it. " +
         "Trigger phrases: 'what variables does X use', 'inspect animation graph', 'read AGR/AGF/AST', " +
-        "'what nodes are in the graph', 'what IK chains does this vehicle have'.",
+        "'what nodes are in the graph', 'what IK chains does this vehicle have'. " +
+        "For new vehicle setup, use animation_graph_setup instead.",
       inputSchema: {
         path: z.string().describe(
           "File path to .agr, .agf, or .ast. Relative to mod project (source=mod) or game data root (source=game). " +
