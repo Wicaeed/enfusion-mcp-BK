@@ -134,13 +134,15 @@ export function registerScenarioTools(server: McpServer, client: WorkbenchClient
         placed.push(names.layerTask);
         await client.call("EMCP_WB_ModifyEntity", { action: "reparent", name: names.layerTask, value: names.area });
 
+        // SlotKill/SlotClearArea/SlotDestroy must be a DIRECT child of LayerTask (not inside Layer_AI).
+        // GetSlotTask() only searches direct children of LayerTask for SCR_ScenarioFrameworkSlotTask.
+        await client.call("EMCP_WB_CreateEntity", { prefab: p.slot, name: names.slot });
+        placed.push(names.slot);
+        await client.call("EMCP_WB_ModifyEntity", { action: "reparent", name: names.slot, value: names.layerTask });
+
         await client.call("EMCP_WB_CreateEntity", { prefab: LAYER_PREFAB, name: names.layerAI });
         placed.push(names.layerAI);
         await client.call("EMCP_WB_ModifyEntity", { action: "reparent", name: names.layerAI, value: names.layerTask });
-
-        await client.call("EMCP_WB_CreateEntity", { prefab: p.slot, name: names.slot });
-        placed.push(names.slot);
-        await client.call("EMCP_WB_ModifyEntity", { action: "reparent", name: names.slot, value: names.layerAI });
 
         await client.call("EMCP_WB_CreateEntity", { prefab: SLOT_AI_PREFAB, name: names.slotAI });
         placed.push(names.slotAI);
@@ -161,9 +163,12 @@ export function registerScenarioTools(server: McpServer, client: WorkbenchClient
         await setProp(names.slot, `${p.slotComp}.m_sObjectToSpawn`, targetPrefab);
         // Give the target a wait waypoint so it stands in place
         await setProp(names.slot, `${p.slotComp}.m_sWPToSpawn`, "{531EC45063C1F57B}Prefabs/AI/Waypoints/AIWaypoint_Wait.et");
+        // Activate only when player enters the area trigger (not on mission start)
+        await setProp(names.slot, `${p.slotComp}.m_eActivationType`, "ON_TRIGGER_ACTIVATION");
 
-        // 9. Wire SlotAI — group to spawn
+        // 9. Wire SlotAI — group to spawn, also trigger-activated
         await setProp(names.slotAI, "SCR_ScenarioFrameworkSlotAI.m_sObjectToSpawn", aiGroupPrefab);
+        await setProp(names.slotAI, "SCR_ScenarioFrameworkSlotAI.m_eActivationType", "ON_TRIGGER_ACTIVATION");
 
         const lines = [
           `**Objective created: ${taskName}**`,

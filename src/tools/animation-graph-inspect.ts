@@ -308,6 +308,69 @@ function parseAst(content: string): string {
   return lines.join("\n");
 }
 
+// ── AW parser ─────────────────────────────────────────────────────────────────
+
+/**
+ * Parse an AW (Animation Workspace) file and return a structured summary.
+ * The .aw file is the Animation Editor project file — it references an AGR, AST,
+ * one or more ASI instances, and preview models.
+ */
+function parseAw(content: string): string {
+  const lines: string[] = [];
+
+  lines.push("=== AW (Animation Workspace) Summary ===\n");
+
+  // AnimGraph reference
+  const animGraph = extractProp(content, "AnimGraph");
+  lines.push(`AnimGraph (AGR): ${animGraph ?? "(not set)"}`);
+  lines.push("");
+
+  // AnimSetTemplate reference
+  const animSetTemplate = extractProp(content, "AnimSetTemplate");
+  lines.push(`AnimSetTemplate (AST): ${animSetTemplate ?? "(not set)"}`);
+  lines.push("");
+
+  // AnimSetInstances
+  const instances = extractStringArray(content, "AnimSetInstances");
+  lines.push(`AnimSetInstances (ASI) (${instances.length}):`);
+  if (instances.length > 0) {
+    for (const inst of instances) lines.push(`  ${inst}`);
+  } else {
+    lines.push("  (none)");
+  }
+  lines.push("");
+
+  // PreviewModels
+  const previewModelBlocks = extractBlocks(content, "AnimSrcWorkspacePreviewModel");
+  lines.push(`Preview Models (${previewModelBlocks.length}):`);
+  if (previewModelBlocks.length > 0) {
+    for (const { body } of previewModelBlocks) {
+      const model = extractProp(body, "Model") ?? "(unknown)";
+      lines.push(`  ${model}`);
+    }
+  } else {
+    lines.push("  (none)");
+  }
+  lines.push("");
+
+  // ChildPreviewModels
+  const childModelBlocks = extractBlocks(content, "AnimSrcWorkspaceChildPreviewModel");
+  lines.push(`Child Preview Models (${childModelBlocks.length}):`);
+  if (childModelBlocks.length > 0) {
+    for (const { body } of childModelBlocks) {
+      const model = extractProp(body, "Model") ?? "(unknown)";
+      const bone = extractProp(body, "Bone") ?? "(no bone)";
+      const enabled = extractProp(body, "Enabled") ?? "1";
+      const enabledStr = enabled === "0" ? " [disabled]" : "";
+      lines.push(`  ${model} @ bone: ${bone}${enabledStr}`);
+    }
+  } else {
+    lines.push("  (none)");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Tool registration ─────────────────────────────────────────────────────────
 
 export function registerAnimationGraphInspect(
@@ -318,16 +381,16 @@ export function registerAnimationGraphInspect(
     "animation_graph_inspect",
     {
       description:
-        "Read and summarize an Arma Reforger animation graph file (.agr, .agf, or .ast). " +
-        "Returns structured info: variables with ranges, IK chains, bone masks, commands, node types. " +
+        "Read and summarize an Arma Reforger animation graph file (.agr, .agf, .ast, or .aw). " +
+        "Returns structured info: variables with ranges, IK chains, bone masks, commands, node types, or workspace references. " +
         "Use to audit an existing vehicle animation graph before modifying it. " +
-        "Trigger phrases: 'what variables does X use', 'inspect animation graph', 'read AGR/AGF/AST', " +
-        "'what nodes are in the graph', 'what IK chains does this vehicle have'. " +
+        "Trigger phrases: 'what variables does X use', 'inspect animation graph', 'read AGR/AGF/AST/AW', " +
+        "'what nodes are in the graph', 'what IK chains does this vehicle have', 'inspect animation workspace'. " +
         "For new vehicle setup, use animation_graph_setup instead.",
       inputSchema: {
         path: z.string().describe(
-          "File path to .agr, .agf, or .ast. Relative to mod project (source=mod) or game data root (source=game). " +
-            "Example: 'Assets/Vehicles/MyTruck/workspaces/MyTruck.agr'"
+          "File path to .agr, .agf, .ast, or .aw. Relative to mod project (source=mod) or game data root (source=game). " +
+            "Example: 'Assets/Vehicles/MyTruck/workspaces/MyTruck.agr' or 'Anims/TEST/TTESSST.aw'"
         ),
         source: z
           .enum(["mod", "game"])
@@ -345,12 +408,12 @@ export function registerAnimationGraphInspect(
     },
     async ({ path: filePath, source, projectPath }) => {
       const ext = extname(filePath).toLowerCase();
-      if (![".agr", ".agf", ".ast"].includes(ext)) {
+      if (![".agr", ".agf", ".ast", ".aw"].includes(ext)) {
         return {
           content: [
             {
               type: "text",
-              text: `Unsupported file type: ${ext}. Supported: .agr, .agf, .ast`,
+              text: `Unsupported file type: ${ext}. Supported: .agr, .agf, .ast, .aw`,
             },
           ],
         };
@@ -413,6 +476,7 @@ export function registerAnimationGraphInspect(
       let summary: string;
       if (ext === ".agr") summary = parseAgr(content);
       else if (ext === ".agf") summary = parseAgf(content);
+      else if (ext === ".aw") summary = parseAw(content);
       else summary = parseAst(content);
 
       return { content: [{ type: "text", text: summary }] };

@@ -455,8 +455,21 @@ function generateAgfInstructions(cfg: VehicleConfig): string {
   parts.push(`These nodes must be added via the Animation Editor UI in Workbench.`);
   parts.push(`Do NOT edit the .agf file directly — Workbench re-serializes it on open.`);
   parts.push(``);
-  parts.push(`### 1. Open the Animation Editor`);
-  parts.push(`- In Workbench, double-click your ${cfg.vehicleName}.agr file`);
+  parts.push(`### 1. Start from a Base Game Workspace (Recommended)`);
+  parts.push(`The fastest way to build the AGF is to duplicate an existing vehicle workspace:`);
+  parts.push(`- In Workbench Asset Browser, find a similar base game .aw file`);
+  parts.push(`  (e.g. Assets/Vehicles/Wheeled/S105/workspace/S105.aw for a 4-wheel vehicle)`);
+  parts.push(`  (e.g. Assets/Vehicles/Wheeled/LAV25/workspaces/LAV25.aw for an 8-wheel vehicle)`);
+  parts.push(`- Double-click the .aw file to open it in the Animation Editor`);
+  parts.push(`- In the Animation Editor: Edit menu -> Duplicate Project`);
+  parts.push(`- Choose your mod output folder — Workbench copies ALL files (AGR, AGF, AST, ASI, AW)`);
+  parts.push(`  with new GUIDs assigned automatically`);
+  parts.push(`- Rename the files to match your vehicle name`);
+  parts.push(`- Edit the duplicated AGR (variables, IK chains, bone masks) to match your vehicle`);
+  parts.push(`- Edit the node graph in the Animation Editor using the steps below`);
+  parts.push(``);
+  parts.push(`Alternative: If building from scratch without a base to duplicate:`);
+  parts.push(`- Open the generated ${cfg.vehicleName}.agr in the Animation Editor`);
   parts.push(`- Go to Edit -> New Graph File, save as ${cfg.vehicleName}.agf in the same folder`);
   parts.push(`- The AGF will appear in GraphFilesResourceNames automatically`);
   parts.push(``);
@@ -606,6 +619,10 @@ function generatePrefabInstructions(cfg: VehicleConfig): string {
 function generateChecklist(cfg: VehicleConfig): string {
   const parts: string[] = [];
   parts.push(`## Verification Checklist`);
+  parts.push(``);
+  parts.push(`Before verifying, confirm your starting point:`);
+  parts.push(`- [ ] Used Duplicate Project from a base game .aw, OR generated AGR/AST from this tool`);
+  parts.push(`- [ ] All files are registered in Workbench (have real GUIDs, not PLACEHOLDER_GUID)`);
   parts.push(``);
   parts.push(`After setup, verify in Workbench:`);
   parts.push(``);
