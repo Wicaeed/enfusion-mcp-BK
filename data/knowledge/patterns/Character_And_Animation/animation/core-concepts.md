@@ -233,6 +233,7 @@ Required files: `.ast` + `.asi` + `.anm` (compiled from `.txa`), plus `Source` n
 - Edit AGF node content directly in a text editor — it works, Workbench preserves it.
 - Edit AGR files directly: add/modify variables, IK chains, bone masks, commands, GlobalTags.
 - Set `DefaultRunNode` in the AGR to exactly match the master Queue node's `Name` in the AGF (case-sensitive).
+- Set `StartNode` on `BaseItemAnimationComponent` in the prefab to match the master Queue node name — without this the graph evaluates nothing even with `AlwaysActive 1` and a correct AGR `DefaultRunNode`.
 - Use `PostEval` on any node that reads tags, remaining time, or animation events.
 - Name all nodes uniquely within their sheet.
 - Use `GetUpperRTime()` in `ProcTransform` `Amount` expressions for continuous real-time motion.
@@ -391,6 +392,50 @@ Amount "GetUpperRTime() * RotationSpeed"
 ```
 
 The variable name in `Amount` must exactly match the name in the AGR `Variables` block (case-sensitive). The variable appears in the Workbench Animation Editor variable panel and can be scrubbed live for testing. From script, bind it via `AnimationControllerComponent.SetVariableFloat("RotationSpeed", value)`.
+
+### Multi-axis ProcTransform tumble (confirmed working on projectile prefab)
+
+Multiple `AnimSrcNodeProcTrBoneItem` entries inside one `ProcTransform` node each apply independently. Use unique placeholder GUIDs per entry.
+
+```
+AnimSrcNodeProcTransform Tumble {
+ EditorPos 2 0
+ Child "BindPose"
+ Expression "1"
+ Bones {
+  AnimSrcNodeProcTrBoneItem "{A1B2C3D4E5F60001}" {
+   Bone "c_mk77root"
+   Op Rotate
+   Amount "GetUpperRTime() * RotationSpeed"
+  }
+  AnimSrcNodeProcTrBoneItem "{A1B2C3D4E5F60002}" {
+   Bone "c_mk77root"
+   Op Rotate
+   Axis Y
+   Amount "GetUpperRTime() * RotationSpeed"
+  }
+ }
+}
+```
+
+Notes:
+- `Op Rotate` with no `Axis` = local X. `Axis Y` = local Y. `Axis Z` = local Z.
+- Multiple bone items on the same bone stack — each rotation is applied in sequence.
+- Use different `Amount` multipliers (e.g. `* 0.3`) for asymmetric tumble vs equal-speed spin.
+
+### BaseItemAnimationComponent prefab wiring (confirmed working)
+
+```
+BaseItemAnimationComponent "{GUID}" {
+ AnimGraph "{GUID}path/to/file.agr"
+ AnimInstance "{GUID}path/to/file.asi"
+ StartNode "MasterQueue"
+ AlwaysActive 1
+}
+```
+
+- `StartNode` must match the master Queue node name exactly — without it the graph does not evaluate even with `AlwaysActive 1` and correct AGR `DefaultRunNode`.
+- `AnimationControllerComponent` must also be present on the entity (can be empty).
 
 ---
 
