@@ -23,8 +23,9 @@ Reference file covering animation file types, AGR/AGF responsibilities, graph ev
 
 **Notes:**
 - `.anm` files are compiled binaries — never edit directly.
-- `.agf` files are re-serialized by Workbench on every open — see Section 2.
+- `.agf` nodes survive Workbench open. They are wiped only if you save through the editor UI — see Section 2.
 - `.pap` / `.siga` are legacy. New work should use the AGR/AGF system.
+- `.ast` / `.asi` / `.anm` are only needed for baked clip playback — not required for ProcTransform/node-only graphs.
 
 ---
 
@@ -51,23 +52,31 @@ The AGR is the top-level config file. It is safe to edit directly in a text edit
 
 ### What lives in the AGF (Animation Graph File)
 
-The AGF holds the actual node graph. Workbench owns this file entirely.
+The AGF holds the actual node graph and can be written directly in a text editor.
 
 - **`Sheets`** — one or more named graph sheets. A sheet is a logical grouping of nodes; complex graphs may use multiple sheets.
 - All node definitions within sheets: Queue, Source, StateMachine, Blend, BlendN, BlendT, ProcTransform, IK2, Tag, Sleep, VarUpdate, etc.
 - Node child/parent connections (each node references its children by name).
-- **`EditorPos`** — `x y` float pair storing the visual layout position of each node in the Animation Editor canvas. This property is completely ignored at runtime — it only affects editor layout.
+- **`EditorPos`** — `x y` float pair for node layout position in the editor canvas. Ignored at runtime. Use ~2 unit spacing (e.g. `0 0`, `2 0`, `4 0`) — large values (100+) place nodes far apart visually.
 
-### Critical rule: AGF is Workbench-owned
+### AGF file editing
 
-**The AGF is WIPED and re-serialized every time Workbench opens it.**
+**The AGF CAN be written directly in a text editor — nodes survive Workbench opening the file.**
 
-- NEVER add nodes to an AGF by editing the file manually. The changes will be lost.
-- NEVER modify existing node content in an AGF via file edit.
-- Only the Workbench Animation Editor UI can reliably add, modify, or remove nodes.
-- The one exception: `EditorPos` values can be adjusted in the file when Workbench is closed — they are layout-only and Workbench will preserve them on next open (it re-serializes to include them).
+**However: saving the AGF through the Workbench Animation Editor UI wipes all nodes.** The wipe happens on editor save, not on open. The correct workflow is:
 
-The AGR, by contrast, survives direct file edits — variables, IK chains, bone masks, commands, and GlobalTags can all be added or modified in the file safely.
+1. Write the AGF in a text editor (outside Workbench).
+2. Open the `.aw` in Workbench — nodes load and work correctly.
+3. **Never save the AGF through the editor.** If you need to make changes, close Workbench, edit the file, reopen.
+
+What Workbench does on open:
+- Re-serializes formatting (whitespace, property order may shift slightly).
+- Replaces placeholder `AnimSrcNodeProcTrBoneItem` GUIDs with engine-generated ones.
+- Does NOT wipe node content — nodes load and evaluate correctly.
+
+Safe to write manually: `AnimSrcNodeQueue`, `AnimSrcNodeProcTransform`, `AnimSrcNodeBindPose`, `AnimSrcNodeBlend`, `AnimSrcNodeStateMachine`, and most other node types.
+
+The AGR also survives direct file edits — variables, IK chains, bone masks, commands, and GlobalTags can all be added or modified safely, including while Workbench is open (reload scripts/resources to pick up changes).
 
 ---
 
@@ -181,96 +190,213 @@ The string value must exactly match the `Name` of the child node within the same
 
 ---
 
-## Section 6: Critical Editor Rules
+## Section 6: The Two-Track Split
+
+The Animation Editor handles two fundamentally different things. It is important to keep them separate mentally:
+
+### Track 1: Graph logic (AGF)
+
+The AGF contains the node graph — logic, blending, procedural bone transforms, state machines. This track does **not** need any `.txa`/`.anm`/`.ast`/`.asi` at all.
+
+Use this track when:
+- Driving bones mathematically (rotation, translation via `ProcTransform` + `GetUpperRTime()`)
+- Blending poses based on variables
+- State machine logic
+- IK
+
+Minimum required files: `.agr` + `.agf`. No `.ast`, `.asi`, `.txa`, or `.anm` needed.
+
+### Track 2: Baked clips (ASI / ANM)
+
+The `.ast` / `.asi` / `.txa` / `.anm` pipeline is for playing back keyframed animations exported from a DCC tool (e.g. Blender). The ASI maps abstract animation names (from the `.ast` schema) to compiled `.anm` clip files. These are referenced by `Source` nodes in the AGF.
+
+Use this track when:
+- Playing back Blender-exported character or prop animations
+- Needing precise keyframed motion that math can't express
+
+Required files: `.ast` + `.asi` + `.anm` (compiled from `.txa`), plus `Source` nodes in the AGF.
+
+### When to use which
+
+| Goal | Track |
+|---|---|
+| Continuous bone spin, oscillation, procedural motion | Graph logic only (ProcTransform) |
+| Playing a Blender-exported walk/idle/action clip | Baked clips (ASI + ANM) |
+| Blending procedural + baked | Both tracks together |
+
+---
+
+## Section 7: Critical Rules
 
 ### DO
 
-- Add all nodes via the Workbench Animation Editor UI.
-- Edit AGR files directly in a text editor: add/modify variables, IK chains, bone masks, commands, GlobalTags.
+- Edit AGF node content directly in a text editor — it works, Workbench preserves it.
+- Edit AGR files directly: add/modify variables, IK chains, bone masks, commands, GlobalTags.
 - Set `DefaultRunNode` in the AGR to exactly match the master Queue node's `Name` in the AGF (case-sensitive).
 - Use `PostEval` on any node that reads tags, remaining time, or animation events.
 - Name all nodes uniquely within their sheet.
-- Use `TimeStorage "Real Time"` on `TimeScale` / `TimeSave` nodes when wall-clock seconds are needed.
+- Use `GetUpperRTime()` in `ProcTransform` `Amount` expressions for continuous real-time motion.
 - Register every AGF file in the AGR `GraphFilesResourceNames` list.
-- In `Source` node, use the format `"GroupName.AnimationName"` (group dot anim, no column name).
-- In `ASI` mapping, use the full `group.column.anim` format.
+- In `Source` node `Source` property, use the 3-part format `"Group.Column.AnimationName"`.
+- In `ASI` mapping, also use the full `group.column.anim` format.
+- Populate `.ast` before opening an AGF that contains `Source` nodes — empty `.ast` causes Workbench to blank the file.
+- Give `AnimSrcNodeProcTrBoneItem` entries a placeholder GUID — Workbench will replace it with a valid one on next open.
 
 ### DO NOT
 
-- Edit AGF node content directly in the file — Workbench wipes it on open.
-- Use `$Time` in `ProcTransform` expressions — it does not exist. Only graph variables and math functions work.
+- Use `$Time` in `ProcTransform` expressions — it does not exist. Use `GetUpperRTime()` instead.
 - Duplicate node names within a sheet.
 - Edit `.anm` files directly — they are compiled binaries.
 - Forget to register AGF files in AGR `GraphFilesResourceNames`.
-- Mix up `Source` node format (`group.anim`) with ASI format (`group.column.anim`).
+- Use the 2-part `Source` node format (`group.anim`) — base game and runtime expect 3-part `group.column.anim`.
 - Use `.pap` / `.siga` for new work — use the AGR/AGF system instead.
 - Attempt to use a `PostEval`-requiring condition in DOWN phase — transitions that check remaining time will silently use stale values.
 
 ---
 
-## Section 7: AGR Structure Reference (File Format)
+## Section 8: AGR Structure Reference (File Format)
 
-Condensed example of a minimal AGR showing all major blocks:
+Confirmed working AGR structure based on actual project files:
 
 ```
-AnimGraphResource "MyGraph.agr" {
- Source "MyAnimSet.ast"
- GraphFilesResourceNames {
-  "MyGraph_Main.agf"
- }
- DefaultRunNode "MasterQueue"
- GlobalTags {
-  "VehicleGraph"
- }
- ControlTemplate {
+AnimSrcGraph {
+ AnimSetTemplate "{GUID}path/to/file.ast"
+ ControlTemplate AnimSrcGCT "{GUID}" {
   Variables {
-   AnimGraphVariableFloat "Speed" {
-    Default 0
-    Min 0
-    Max 50
+   AnimSrcGCTVarFloat RotationSpeed {
+    DefaultValue 2.094
+    MinValue 0
+    MaxValue 62.832
    }
-   AnimGraphVariableBool "IsGrounded" {
-    Default true
+   AnimSrcGCTVarBool IsActive {
+   }
+   AnimSrcGCTVarInt SeatIndex {
+    MaxValue 10
    }
   }
   Commands {
-   AnimGraphCommand "GetIn" {}
-   AnimGraphCommand "GetOut" {}
+   AnimSrcGCTCmd CMD_GetIn {
+   }
   }
   IkChains {
-   AnimGraphIkChain "RightArm" {
-    Joints { "upperarm_r" "lowerarm_r" "hand_r" }
-    MiddleJoint "lowerarm_r"
-    ChainAxis "0 1 0"
+   AnimSrcGCTIkChain MyChain {
+    Joints {
+     "bone_a"
+     "bone_b"
+    }
+    MiddleJoint "bone_b"
+    ChainAxis "+y"
    }
   }
   BoneMasks {
-   AnimGraphBoneMask "UpperBody" {
-    Bones { "spine_01" "spine_02" "spine_03" "neck_01" "head" }
+   AnimSrcGCTBoneMask MyMask {
+    Bones {
+     "spine_01"
+     "spine_02"
+    }
    }
   }
  }
- Debug {
+ Debug AnimSrcGD "{GUID}" {
+ }
+ GraphFilesResourceNames {
+  "{GUID}path/to/file.agf"
+ }
+ DefaultRunNode "MasterQueue"
+}
+```
+
+Key: real class names are `AnimSrcGraph`, `AnimSrcGCT`, `AnimSrcGCTVarFloat`, `AnimSrcGCTVarBool`, `AnimSrcGCTVarInt`, `AnimSrcGCTCmd`, `AnimSrcGCTIkChain`, `AnimSrcGCTBoneMask` — not the `AnimGraph*` names seen in older docs.
+
+---
+
+## Section 9: Source Node — AST Name Format
+
+Both the `Source` property on an AGF `Source` node and the `ASI` mapping use the **same 3-part format**.
+
+| Context | Format | Example |
+|---------|--------|---------|
+| AGF `Source` node `Source` property | `"Group.Column.AnimationName"` | `"spin.default.Rotate360X"` |
+| ASI mapping key | `"Group.Column.AnimationName"` | `"spin.default.Rotate360X"` |
+
+The column selects which `.anm` variant to use (e.g. `default`, `damaged`, `lod1`). Both sides must use the full 3-part path. Using 2-part `"Group.AnimationName"` on a `Source` node will fail silently.
+
+---
+
+## Section 10: Confirmed Working AGF Patterns
+
+### Pure ProcTransform spin (no baked clips, no .ast/.asi/.anm)
+
+Continuously rotates a bone on its local X axis using wall-clock time. One full rotation every N seconds = `2π / N`.
+
+```
+AnimSrcGraphFile {
+ Sheets {
+  AnimSrcGraphSheet MySheet {
+   Nodes {
+    AnimSrcNodeQueue MasterQueue {
+     EditorPos 0 0
+     Child "RotateX"
+    }
+    AnimSrcNodeProcTransform RotateX {
+     EditorPos 2 0
+     Child "BindPose"
+     Expression "1"
+     Bones {
+      AnimSrcNodeProcTrBoneItem "{A1B2C3D4E5F60001}" {
+       Bone "my_bone"
+       Op Rotate
+       Amount "GetUpperRTime() * 2.0944"
+      }
+     }
+    }
+    AnimSrcNodeBindPose BindPose {
+     EditorPos 4 0
+    }
+   }
+  }
  }
 }
 ```
 
----
+Notes:
+- `2.0944` = `2π / 3` → 360° per 3 seconds. Adjust denominator for different speeds.
+- `Op Rotate` without `Axis` rotates on local X. Use `Axis Y` or `Axis Z` for other axes.
+- Placeholder GUID on `ProcTrBoneItem` is preserved by Workbench on open — any hex string works.
+- `BindPose` is the required leaf node — provides the base pose that ProcTransform modifies.
+- AGR must set `DefaultRunNode "MasterQueue"` and register the AGF in `GraphFilesResourceNames`.
+- EditorPos spacing: ~2 units apart. Large values (100+) make nodes appear far apart in the editor.
+- **Do not save the AGF through the Workbench editor** — this wipes all nodes. Open only, never save.
 
-## Section 8: Source Node — AST Name Format
+### Adding a float variable to control ProcTransform at runtime
 
-The `Source` property on a `Source` node and the mapping in an `ASI` use different formats. This is a frequent source of errors.
+Add a `Variables` block inside `ControlTemplate` in the AGR:
 
-| Context | Format | Example |
-|---------|--------|---------|
-| AGF `Source` node `Source` property | `"Group.AnimationName"` | `"basic.Idle"` |
-| ASI mapping | `"Group.Column.AnimationName"` | `"basic.default.Idle"` |
+```
+ControlTemplate AnimSrcGCT "{...}" {
+ Variables {
+  AnimSrcGCTVarFloat RotationSpeed {
+   DefaultValue 2.094
+   MinValue 0
+   MaxValue 20
+  }
+ }
+}
+```
 
-The column name is part of the AST structure and is used in the ASI to select which `.anm` file to use for a given variant. The AGF node does not specify a column — the ASI resolves that at runtime.
+Then reference the variable name directly in the AGF `Amount` expression:
+
+```
+Amount "GetUpperRTime() * RotationSpeed"
+```
+
+The variable name in `Amount` must exactly match the name in the AGR `Variables` block (case-sensitive). The variable appears in the Workbench Animation Editor variable panel and can be scrubbed live for testing. From script, bind it via `AnimationControllerComponent.SetVariableFloat("RotationSpeed", value)`.
 
 ---
 
 ## Related Patterns
 
-- `animation-graph.md` — node type quick reference, ProcTransform pitfalls, script-driven variables, PAP/SIGA legacy system
-- `animation/` directory INDEX for other animation sub-topics
+- `node-cheatsheet.md` — every node one-liner, expressions, EditorPos spacing, confirmed patterns
+- `state-machine-guide.md` — StateMachine/transition full reference, all built-in functions
+- `node-reference.md` — full detail on every node type
+- `animation/INDEX.md` — task routing for all animation topics

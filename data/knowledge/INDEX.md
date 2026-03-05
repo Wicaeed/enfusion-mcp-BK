@@ -50,6 +50,11 @@ Two tiers:
 | [gadgets-actions.md](patterns/Character_And_Animation/gadgets-actions.md) | SCR_FlashlightComponent pitfalls, SetEmissiveMultiplier, ScriptedUserAction pattern |
 | [animation/INDEX.md](patterns/Character_And_Animation/animation/INDEX.md) | Full animation graph system — AGF nodes, vehicle animation, PAP/SIGA, script integration. See local index for task routing. |
 
+**External source documents (read directly when patterns are insufficient):**
+| Path | Contents |
+|---|---|
+| `C:\Users\Steffen\Documents\A_documents\Arma_Reforger_RAG_Hybrid_Optimized\Documentation\Character_And_Animation\Arma_Reforger_Animation_Editor_State_Machine_Teaching_Guide.md` | Full StateMachine reference — all State/Transition properties, every built-in expression function, Post Eval rules, 12 design patterns, glossary |
+
 ---
 
 ## Reference (full wiki docs — read on demand only)
