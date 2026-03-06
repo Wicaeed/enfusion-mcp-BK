@@ -105,7 +105,7 @@ After implementing any upgrade, complete **all** of the following before marking
 
 ---
 
-### 7. Pattern Composition (Mix-and-Match)
+### 7. ~~Pattern Composition (Mix-and-Match)~~ ✅Done
 
 **What**: Allow `mod_create` to accept an array of patterns instead of a single one, merging their scripts/prefabs/configs. A "game-mode + custom-faction + hud-widget" combo should produce one scaffold with all three systems wired together.
 
@@ -119,7 +119,7 @@ After implementing any upgrade, complete **all** of the following before marking
 
 ---
 
-### 8. Class Hierarchy Visualization
+### ~~8. Class Hierarchy Visualization~~ ✅Done
 
 **What**: Add a `tree` output mode to `api_search` that renders the inheritance chain as an ASCII tree, showing a class's ancestors (up to root) and immediate descendants with their key methods — a "class at a glance" view.
 
