@@ -97,6 +97,7 @@ Work without Workbench running — API search, mod scaffolding, code generation,
 | `wiki_read` | Read the full content of a wiki page by title — no truncation, includes code examples |
 | `game_browse` | Browse base game files — loose files and `.pak` archives transparently |
 | `game_read` | Read base game files — scripts, prefabs, configs from loose files or `.pak` |
+| `prefab_inspect` | Inspect a prefab's full inheritance chain — merges all components across ancestors, showing which level each value comes from. Solves the problem of `.et` files only showing overrides. |
 | `asset_search` | Search game assets by name across loose files and `.pak` archives |
 | `project_browse` | List files in a mod project directory |
 | `project_read` | Read any project file |
@@ -132,7 +133,7 @@ Control a running Workbench instance over TCP. Requires the handler scripts inst
 | `wb_entity_inspect` | Get entity details — properties, components, children |
 | `wb_entity_modify` | Move, rotate, rename, reparent, set/clear/get/list properties, list/add/remove array items |
 | `wb_entity_select` | Select, deselect, clear, get current selection |
-| `wb_component` | Add, remove, list entity components |
+| `wb_component` | Add, remove, list entity components — supports lookup by name or index (for unnamed entities) |
 | `wb_terrain` | Query terrain height and world bounds |
 | `wb_layers` | Create, delete, rename layers, set visibility/active |
 | `wb_resources` | Register resources, rebuild database |
