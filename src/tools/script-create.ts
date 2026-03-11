@@ -3,6 +3,7 @@ import { z } from "zod";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import type { Config } from "../config.js";
+import type { SearchEngine } from "../index/search-engine.js";
 import {
   generateScript,
   getScriptModuleFolder,
@@ -11,12 +12,12 @@ import {
 } from "../templates/script.js";
 import { validateFilename, validateEnforceIdentifier } from "../utils/safe-path.js";
 
-export function registerScriptCreate(server: McpServer, config: Config): void {
+export function registerScriptCreate(server: McpServer, config: Config, searchEngine?: SearchEngine): void {
   server.registerTool(
     "script_create",
     {
       description:
-        "Create a new Enforce Script (.c) file for an Arma Reforger mod. Generates a properly structured script from a template with correct class hierarchy and method stubs.",
+        "Create a new Enforce Script (.c) file for an Arma Reforger mod. Generates a properly structured script from a template with correct class hierarchy and method stubs. When parentClass is specified and no explicit methods are given, automatically looks up overridable methods from the API index.",
       inputSchema: {
         className: z
           .string()
@@ -58,11 +59,31 @@ export function registerScriptCreate(server: McpServer, config: Config): void {
         validateFilename(className);
         validateEnforceIdentifier(className);
 
+        // Resolve parent methods from API index if available and no explicit methods given
+        let dynamicMethods: string[] | undefined;
+        if (!methods && searchEngine && parentClass) {
+          const cls = searchEngine.getClass(parentClass);
+          if (cls) {
+            const allMethods = [
+              ...(cls.methods || []),
+              ...(cls.protectedMethods || []),
+            ];
+            const overridable = allMethods.filter((m) =>
+              /^(On|EOn|Get|Set|Can|Handle|Do)/.test(m.name) ||
+              m.signature.includes("event")
+            );
+            if (overridable.length > 0) {
+              dynamicMethods = overridable.slice(0, 8).map((m) => m.signature);
+            }
+          }
+        }
+
         const code = generateScript({
           className,
           scriptType: scriptType as ScriptType,
           parentClass,
           methods,
+          dynamicMethods,
           description,
         });
 

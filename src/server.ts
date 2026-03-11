@@ -67,7 +67,7 @@ export function registerTools(server: McpServer, config: Config): void {
   // Phase 1 tools
   registerProjectRead(server, config);
   registerModCreate(server, config, patterns);
-  registerScriptCreate(server, config);
+  registerScriptCreate(server, config, searchEngine);
   registerPrefabCreate(server, config);
 
   // Phase 2 tools
