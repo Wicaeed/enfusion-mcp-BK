@@ -295,6 +295,12 @@ export function registerAssetSearch(server: McpServer, config: Config): void {
           lines.push(`\n  ... and ${results.length - limit} more results`);
         }
 
+        if (cachedGuidDiag && cachedGuidDiag.startsWith("GUID INDEX ERROR")) {
+          lines.push("");
+          lines.push(`**Warning:** ${cachedGuidDiag}`);
+          lines.push("Some results may be missing GUID prefixes. Check file permissions or game installation.");
+        }
+
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
