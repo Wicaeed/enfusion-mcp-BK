@@ -146,6 +146,37 @@ export function registerModCreate(
         if (patternName) {
           const patternDef = patterns.get(patternName)!;
 
+          // Check for filename collisions after prefix replacement
+          const scriptPaths: string[] = [];
+          for (const scriptDef of patternDef.scripts) {
+            const className = scriptDef.className.replace(/\{PREFIX\}/g, classPrefix);
+            const path = `Scripts/Game/${className}.c`;
+            if (scriptPaths.includes(path)) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Pattern "${patternName}" produces duplicate script file after prefix replacement: ${path}\nUse a different prefix to avoid collisions.`,
+                }],
+              };
+            }
+            scriptPaths.push(path);
+          }
+
+          const configPaths: string[] = [];
+          for (const configDef of patternDef.configs) {
+            const configName = configDef.name.replace(/\{PREFIX\}/g, classPrefix);
+            const path = `Configs/${configName}.conf`;
+            if (configPaths.includes(path)) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Pattern "${patternName}" produces duplicate config file after prefix replacement: ${path}\nUse a different prefix to avoid collisions.`,
+                }],
+              };
+            }
+            configPaths.push(path);
+          }
+
           // Generate scripts from pattern
           for (const scriptDef of patternDef.scripts) {
             const className = scriptDef.className.replace(/\{PREFIX\}/g, classPrefix);
