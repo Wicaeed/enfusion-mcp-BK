@@ -10,6 +10,7 @@ import { join, dirname } from "node:path";
 import type { Config } from "../config.js";
 import type { WorkbenchClient } from "../workbench/client.js";
 import { resolveGameDataPath, findLooseFile, resolveAddonDir } from "../utils/game-paths.js";
+import { validateProjectPath } from "../utils/safe-path.js";
 
 /**
  * wb_entity_duplicate — duplicate a scene entity into the mod folder.
@@ -79,7 +80,7 @@ export function registerWbEntityDuplicate(
       }
 
       // Check destination doesn't already exist
-      const absDestPath = join(addonDir, destPath.replace(/\\/g, "/").replace(/^\//, ""));
+      const absDestPath = validateProjectPath(addonDir, destPath.replace(/\\/g, "/"));
       if (existsSync(absDestPath)) {
         return {
           content: [{ type: "text", text: `Destination already exists: ${absDestPath}` }],

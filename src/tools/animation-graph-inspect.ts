@@ -444,7 +444,7 @@ export function registerAnimationGraphInspect(
         } else {
           // source === "game" — try loose files then pak
           const dataPath = join(config.gamePath, "addons", "data");
-          const loosePath = resolve(dataPath, filePath);
+          const loosePath = validateProjectPath(dataPath, filePath);
           if (existsSync(loosePath)) {
             content = readFileSync(loosePath, "utf-8");
           } else {

@@ -1,5 +1,5 @@
 import { readdirSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve, join, sep } from "node:path";
 
 /**
  * Resolve the game data directory (loose/extracted files).
@@ -40,7 +40,10 @@ export function findLooseFile(gameDataPath: string, relativePath: string): strin
 /** Find the addon directory: by modName (folder name) or first addon with a .gproj. */
 export function resolveAddonDir(projectPath: string, modName?: string): string | null {
   if (modName) {
-    const dir = resolve(projectPath, modName);
+    const base = resolve(projectPath);
+    const dir = resolve(base, modName);
+    // Prevent path traversal — modName must not escape projectPath
+    if (dir !== base && !dir.startsWith(base + sep)) return null;
     return existsSync(dir) ? dir : null;
   }
   try {
