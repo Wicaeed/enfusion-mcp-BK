@@ -354,41 +354,6 @@ class Parser {
     return node;
   }
 
-  /**
-   * Parse a node where the type name is composed of multiple identifiers.
-   * In Enfusion, "GameProjectConfig PC" has type "GameProjectConfig" and
-   * a secondary identifier "PC" that acts as the node's ID.
-   */
-  parseNodeMultiIdent(firstIdent: string): EnfusionNode {
-    // Already consumed firstIdent. peek at next.
-    const next = this.peek();
-    if (next && next.type === TokenType.Identifier) {
-      const secondIdent = this.advance();
-      // Use combined as type, or firstIdent as type and secondIdent as id
-      const node: EnfusionNode = {
-        type: firstIdent,
-        id: secondIdent.value,
-        properties: [],
-        values: [],
-        children: [],
-      };
-
-      // Check for ":" inheritance
-      const after = this.peek();
-      if (after && after.type === TokenType.Colon) {
-        this.advance();
-        const inhTok = this.expect(TokenType.String);
-        node.inheritance = inhTok.value;
-      }
-
-      // Opening brace
-      this.expect(TokenType.OpenBrace);
-      // ... would need to parse contents
-      // This is getting complex — let's handle it in parseNode instead
-      return node;
-    }
-    throw new Error("Expected identifier after type name");
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -418,7 +383,7 @@ function serializeNode(node: EnfusionNode, indent: number): string {
   // For component GUIDs, we quote them
   if (node.id !== undefined) {
     // If the id looks like a GUID or contains special chars, quote it
-    if (/^[A-Za-z0-9_]+$/.test(node.id) && !/^[0-9A-F]{16}$/.test(node.id)) {
+    if (/^[A-Za-z0-9_]+$/.test(node.id) && !/^[0-9A-Fa-f]{16}$/.test(node.id)) {
       header += ` ${node.id}`;
     } else {
       header += ` "${escapeString(node.id)}"`;

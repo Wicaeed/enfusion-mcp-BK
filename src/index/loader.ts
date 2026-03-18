@@ -1,12 +1,11 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { logger } from "../utils/logger.js";
-import type { ClassInfo, GroupInfo, HierarchyNode, WikiPage } from "./types.js";
+import type { ClassInfo, GroupInfo, WikiPage } from "./types.js";
 
 export interface IndexData {
   enfusionClasses: ClassInfo[];
   armaClasses: ClassInfo[];
-  hierarchy: HierarchyNode[];
   groups: GroupInfo[];
   wikiPages: WikiPage[];
 }
@@ -36,10 +35,6 @@ export function loadIndex(dataDir: string): IndexData {
     ),
     armaClasses: loadJson<ClassInfo[]>(
       resolve(apiDir, "arma-classes.json"),
-      []
-    ),
-    hierarchy: loadJson<HierarchyNode[]>(
-      resolve(apiDir, "hierarchy.json"),
       []
     ),
     groups: loadJson<GroupInfo[]>(resolve(apiDir, "groups.json"), []),

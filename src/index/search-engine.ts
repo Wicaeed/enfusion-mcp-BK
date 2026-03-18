@@ -268,9 +268,10 @@ export class SearchEngine {
 
     // Fuzzy fallback: only activate when strict matching returns < 3 results
     if (results.length < 3) {
+      const seen = new Set(results.map((r) => r.cls.name));
       for (const cls of this.classByName.values()) {
         if (source !== "all" && cls.source !== source) continue;
-        if (results.some((r) => r.cls.name === cls.name)) continue;
+        if (seen.has(cls.name)) continue;
 
         const nameLower = cls.name.toLowerCase();
         const dist = levenshtein(q, nameLower);
@@ -319,8 +320,9 @@ export class SearchEngine {
 
     // Fuzzy fallback: only activate when strict matching returns < 3 results
     if (results.length < 3) {
+      const seen = new Set(results.map((r) => r.result.method.name));
       for (const [methodName, entries] of this.methodIndex) {
-        if (results.some((r) => r.result.method.name === methodName)) continue;
+        if (seen.has(methodName)) continue;
         const dist = levenshtein(q, methodName);
         let fuzzyScore = 0;
         if (dist <= 1) {
@@ -375,6 +377,33 @@ export class SearchEngine {
       }
     }
 
+    // Fuzzy fallback: only activate when strict matching returns < 3 results
+    if (results.length < 3) {
+      for (const [enumKey, entries] of this.enumIndex) {
+        const dedup = entries.map((e) => `${e.className}::${e.enumInfo.name}`);
+        if (dedup.every((d) => seen.has(d))) continue;
+        const dist = levenshtein(q, enumKey);
+        let fuzzyScore = 0;
+        if (dist <= 1) {
+          fuzzyScore = 40;
+        } else if (dist <= 2) {
+          fuzzyScore = 20;
+        } else {
+          const sim = trigramSimilarity(q, enumKey);
+          if (sim > 0.3) fuzzyScore = 15;
+        }
+        if (fuzzyScore > 0) {
+          for (const entry of entries) {
+            if (source !== "all" && entry.classSource !== source) continue;
+            const dedupKey = `${entry.className}::${entry.enumInfo.name}`;
+            if (seen.has(dedupKey)) continue;
+            seen.add(dedupKey);
+            results.push({ result: entry, score: fuzzyScore });
+          }
+        }
+      }
+    }
+
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, limit).map((r) => r.result);
   }
@@ -401,6 +430,32 @@ export class SearchEngine {
         for (const entry of entries) {
           if (source !== "all" && entry.classSource !== source) continue;
           results.push({ result: entry, score });
+        }
+      }
+    }
+
+    // Fuzzy fallback: only activate when strict matching returns < 3 results
+    if (results.length < 3) {
+      const seen = new Set(results.map((r) => `${r.result.className}::${r.result.property.name}`));
+      for (const [propName, entries] of this.propertyIndex) {
+        const dist = levenshtein(q, propName);
+        let fuzzyScore = 0;
+        if (dist <= 1) {
+          fuzzyScore = 40;
+        } else if (dist <= 2) {
+          fuzzyScore = 20;
+        } else {
+          const sim = trigramSimilarity(q, propName);
+          if (sim > 0.3) fuzzyScore = 15;
+        }
+        if (fuzzyScore > 0) {
+          for (const entry of entries) {
+            if (source !== "all" && entry.classSource !== source) continue;
+            const dedupKey = `${entry.className}::${entry.property.name}`;
+            if (seen.has(dedupKey)) continue;
+            seen.add(dedupKey);
+            results.push({ result: entry, score: fuzzyScore });
+          }
         }
       }
     }
@@ -583,14 +638,20 @@ export class SearchEngine {
     const methods: MethodSearchResult[] = [];
     const properties: PropertySearchResult[] = [];
     const enums: EnumSearchResult[] = [];
+    const seenMethods = new Set<string>();
+    const seenProps = new Set<string>();
+    const seenEnums = new Set<string>();
 
     const chain = this.getInheritanceChain(name);
-    // Skip the class itself — only include ancestors
-    for (const ancestorName of chain.slice(0, -1)) {
+    // Skip the class itself — only include ancestors (nearest parent first)
+    const ancestors = chain.slice(0, -1).reverse();
+    for (const ancestorName of ancestors) {
       const cls = this.getClass(ancestorName);
       if (!cls) continue;
 
       for (const method of [...(cls.methods || []), ...(cls.protectedMethods || []), ...(cls.staticMethods || [])]) {
+        if (seenMethods.has(method.name)) continue;
+        seenMethods.add(method.name);
         methods.push({
           className: cls.name,
           classSource: cls.source,
@@ -600,6 +661,8 @@ export class SearchEngine {
       }
 
       for (const prop of [...(cls.properties || []), ...(cls.protectedProperties || [])]) {
+        if (seenProps.has(prop.name)) continue;
+        seenProps.add(prop.name);
         properties.push({
           className: cls.name,
           classSource: cls.source,
@@ -609,6 +672,8 @@ export class SearchEngine {
       }
 
       for (const enumInfo of cls.enums || []) {
+        if (seenEnums.has(enumInfo.name)) continue;
+        seenEnums.add(enumInfo.name);
         enums.push({
           className: cls.name,
           classSource: cls.source,

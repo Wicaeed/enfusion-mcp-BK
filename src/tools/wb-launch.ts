@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
 import type { WorkbenchClient } from "../workbench/client.js";
 import { formatConnectionStatus } from "../workbench/status.js";
@@ -69,6 +69,7 @@ export function registerWbLaunch(
               text: `**Launch Failed**\n\n${msg}${formatConnectionStatus(client)}`,
             },
           ],
+          isError: true,
         };
       }
     }
@@ -90,26 +91,29 @@ export function registerWbLaunch(
       },
     },
     async ({ modDir }) => {
-      // Validate modDir looks like a real mod directory (has a .gproj)
-      if (!existsSync(modDir)) {
+      // Resolve to absolute path and validate
+      const resolvedModDir = resolve(modDir);
+      if (!existsSync(resolvedModDir)) {
         return {
           content: [{
             type: "text" as const,
             text: `**Error:** Directory not found: ${modDir}${formatConnectionStatus(client)}`,
           }],
+        isError: true,
         };
       }
-      const hasGproj = readdirSync(modDir).some(f => f.endsWith(".gproj"));
+      const hasGproj = readdirSync(resolvedModDir).some(f => f.endsWith(".gproj"));
       if (!hasGproj) {
         return {
           content: [{
             type: "text" as const,
-            text: `**Error:** "${modDir}" does not appear to be a mod directory (no .gproj file found). Provide the mod root directory containing the .gproj file.${formatConnectionStatus(client)}`,
+            text: `**Error:** "${resolvedModDir}" does not appear to be a mod directory (no .gproj file found). Provide the mod root directory containing the .gproj file.${formatConnectionStatus(client)}`,
           }],
+        isError: true,
         };
       }
 
-      const removed = client.cleanupHandlerScripts(modDir);
+      const removed = client.cleanupHandlerScripts(resolvedModDir);
       if (removed) {
         return {
           content: [

@@ -91,7 +91,7 @@ export class WorkbenchClient {
       return result;
     } catch (err) {
       if (err instanceof WorkbenchError) {
-        if (err.code === "CONNECTION_REFUSED") {
+        if (err.code === "CONNECTION_REFUSED" || err.code === "TIMEOUT" || err.code === "PROTOCOL_ERROR") {
           this._state = { connected: false, mode: "unknown", lastUpdated: Date.now() };
         }
         if (!options.skipAutoLaunch && this.config) {
@@ -456,6 +456,7 @@ export class WorkbenchClient {
       const timer = setTimeout(() => {
         if (!settled) {
           settled = true;
+          cleanup();
           socket.destroy();
           reject(
             new WorkbenchError(
