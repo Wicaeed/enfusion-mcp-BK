@@ -23,6 +23,20 @@ export interface ConfigOptions {
   scenarioName?: string;
   /** Scenario description (mission-header) */
   scenarioDescription?: string;
+  /**
+   * Mission header mode (mission-header type only).
+   * "Conflict" (default) → SCR_MissionHeaderCampaign with Conflict properties.
+   * "SF" → SCR_MissionHeader for Scenario Framework SP/coop missions.
+   */
+  missionMode?: "Conflict" | "SF";
+  /** Scenario author name (mission-header Conflict) */
+  author?: string;
+  /** Game mode display label, e.g. "Conflict", "Seize & Secure" (mission-header Conflict) */
+  gameModeLabel?: string;
+  /** Max player count (mission-header Conflict, default 40) */
+  playerCount?: number;
+  /** XP multiplier, e.g. 0.5 for PvE (mission-header Conflict, omitted if 1.0) */
+  xpMultiplier?: number;
   /** List of prefab resource paths (entity-catalog, editor-placeables) */
   prefabRefs?: string[];
   /** Category name (entity-catalog, editor-placeables) */
@@ -58,7 +72,12 @@ const CONFIG_TYPE_INFO: Record<ConfigType, ConfigTypeInfo> = {
  */
 export function generateConfig(opts: ConfigOptions): string {
   const info = CONFIG_TYPE_INFO[opts.configType];
-  const root = createNode(info.rootType);
+  // mission-header: root type depends on mode
+  const rootType =
+    opts.configType === "mission-header" && opts.missionMode !== "SF"
+      ? "SCR_MissionHeaderCampaign"
+      : info.rootType;
+  const root = createNode(rootType);
 
   switch (opts.configType) {
     case "mission-header":
@@ -82,11 +101,29 @@ function buildMissionHeader(
   root: ReturnType<typeof createNode>,
   opts: ConfigOptions
 ): void {
-  setProperty(root, "m_sName", opts.scenarioName || opts.name);
-  setProperty(root, "m_sDescription", opts.scenarioDescription || "");
-  setProperty(root, "m_sWorldFile", opts.worldPath || "");
-  setProperty(root, "m_sIcon", "");
-  setProperty(root, "m_bIsModded", "1");
+  if (opts.missionMode === "SF") {
+    // Scenario Framework — single-player / co-op narrative missions
+    setProperty(root, "m_sName", opts.scenarioName || opts.name);
+    setProperty(root, "m_sDescription", opts.scenarioDescription || "");
+    setProperty(root, "m_sWorldFile", opts.worldPath || "");
+    setProperty(root, "m_sIcon", "");
+    setProperty(root, "m_bIsModded", "1");
+  } else {
+    // Conflict (default) — multiplayer Campaign/Conflict scenarios
+    // Matches the exact property order used by vanilla Conflict_East.conf
+    if (opts.worldPath) setProperty(root, "World", opts.worldPath);
+    setProperty(root, "SystemsConfig", "{7C9E720397CC6ACD}Configs/Systems/ConflictSystems.conf");
+    setProperty(root, "m_sName", opts.scenarioName || opts.name);
+    if (opts.scenarioDescription) setProperty(root, "m_sDescription", opts.scenarioDescription);
+    if (opts.author) setProperty(root, "m_sAuthor", opts.author);
+    setProperty(root, "m_sGameMode", opts.gameModeLabel || "Conflict");
+    setProperty(root, "m_iPlayerCount", String(opts.playerCount ?? 40));
+    setProperty(root, "m_eEditableGameFlags", "6");
+    setProperty(root, "m_eDefaultGameFlags", "6");
+    if (opts.xpMultiplier !== undefined && opts.xpMultiplier !== 1.0) {
+      setProperty(root, "m_fXpMultiplier", String(opts.xpMultiplier));
+    }
+  }
 }
 
 function buildFaction(

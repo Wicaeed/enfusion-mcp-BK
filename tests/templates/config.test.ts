@@ -8,39 +8,99 @@ import { parse } from "../../src/formats/enfusion-text.js";
 
 describe("generateConfig", () => {
   describe("mission-header", () => {
-    it("generates valid Enfusion text", () => {
-      const result = generateConfig({
-        configType: "mission-header",
-        name: "TestScenario",
-        scenarioName: "My Test Scenario",
-        scenarioDescription: "A test scenario",
-        worldPath: "{AABB}Worlds/TestWorld.ent",
+    describe("Conflict mode (default)", () => {
+      it("generates valid Enfusion text with SCR_MissionHeaderCampaign", () => {
+        const result = generateConfig({
+          configType: "mission-header",
+          name: "TestScenario",
+          scenarioName: "My Test Scenario",
+          worldPath: "{9DF143A76F5C6460}worlds/MP/CTI_Campaign_Eden.ent",
+        });
+        const node = parse(result);
+        expect(node.type).toBe("SCR_MissionHeaderCampaign");
       });
-      const node = parse(result);
-      expect(node.type).toBe("SCR_MissionHeader");
+
+      it("sets Conflict mission header properties", () => {
+        const result = generateConfig({
+          configType: "mission-header",
+          name: "TestScenario",
+          scenarioName: "My Scenario",
+          scenarioDescription: "Desc here",
+          worldPath: "{9DF143A76F5C6460}worlds/MP/CTI_Campaign_Eden.ent",
+          playerCount: 64,
+          gameModeLabel: "Conflict",
+          xpMultiplier: 0.5,
+        });
+        expect(result).toContain("SCR_MissionHeaderCampaign");
+        expect(result).toContain("World");
+        expect(result).toContain("m_sName");
+        expect(result).toContain("My Scenario");
+        expect(result).toContain("m_sGameMode");
+        expect(result).toContain("Conflict");
+        expect(result).toContain("m_iPlayerCount");
+        expect(result).toContain("64");
+        expect(result).toContain("m_eEditableGameFlags");
+        expect(result).toContain("m_eDefaultGameFlags");
+        expect(result).toContain("m_fXpMultiplier");
+        expect(result).toContain("0.5");
+      });
+
+      it("omits xpMultiplier when 1.0", () => {
+        const result = generateConfig({
+          configType: "mission-header",
+          name: "TestScenario",
+          xpMultiplier: 1.0,
+        });
+        expect(result).not.toContain("m_fXpMultiplier");
+      });
+
+      it("uses name as fallback for scenarioName", () => {
+        const result = generateConfig({
+          configType: "mission-header",
+          name: "FallbackName",
+        });
+        expect(result).toContain("FallbackName");
+      });
+
+      it("includes SystemsConfig for Conflict", () => {
+        const result = generateConfig({
+          configType: "mission-header",
+          name: "TestScenario",
+        });
+        expect(result).toContain("SystemsConfig");
+        expect(result).toContain("ConflictSystems.conf");
+      });
     });
 
-    it("sets all mission header properties", () => {
-      const result = generateConfig({
-        configType: "mission-header",
-        name: "TestScenario",
-        scenarioName: "My Scenario",
-        scenarioDescription: "Desc here",
-        worldPath: "{AABB}Worlds/Test.ent",
+    describe("SF mode", () => {
+      it("generates SCR_MissionHeader for SF mode", () => {
+        const result = generateConfig({
+          configType: "mission-header",
+          name: "TestScenario",
+          missionMode: "SF",
+          scenarioName: "My SF Scenario",
+          worldPath: "{AABB}Worlds/TestWorld.ent",
+        });
+        const node = parse(result);
+        expect(node.type).toBe("SCR_MissionHeader");
       });
-      expect(result).toContain("m_sName");
-      expect(result).toContain("My Scenario");
-      expect(result).toContain("m_sDescription");
-      expect(result).toContain("m_sWorldFile");
-      expect(result).toContain("m_bIsModded");
-    });
 
-    it("uses name as fallback for scenarioName", () => {
-      const result = generateConfig({
-        configType: "mission-header",
-        name: "FallbackName",
+      it("sets SF mission header properties", () => {
+        const result = generateConfig({
+          configType: "mission-header",
+          name: "TestScenario",
+          missionMode: "SF",
+          scenarioName: "My Scenario",
+          scenarioDescription: "Desc here",
+          worldPath: "{AABB}Worlds/Test.ent",
+        });
+        expect(result).toContain("m_sName");
+        expect(result).toContain("My Scenario");
+        expect(result).toContain("m_sDescription");
+        expect(result).toContain("m_sWorldFile");
+        expect(result).toContain("m_bIsModded");
+        expect(result).not.toContain("SCR_MissionHeaderCampaign");
       });
-      expect(result).toContain("FallbackName");
     });
   });
 

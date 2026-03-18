@@ -45,7 +45,7 @@ export function registerConfigCreate(
         worldPath: z
           .string()
           .optional()
-          .describe("Path to .ent world file (mission-header type)"),
+          .describe("Path to .ent world file (mission-header type). For Conflict mode use the full resource ref e.g. '{9DF143A76F5C6460}worlds/MP/CTI_Campaign_Eden.ent'."),
         scenarioName: z
           .string()
           .optional()
@@ -54,6 +54,30 @@ export function registerConfigCreate(
           .string()
           .optional()
           .describe("Scenario description (mission-header type)"),
+        missionMode: z
+          .enum(["Conflict", "SF"])
+          .optional()
+          .describe(
+            "Mission header mode (mission-header type only). " +
+            "'Conflict' (default) generates SCR_MissionHeaderCampaign for multiplayer Conflict/Campaign scenarios. " +
+            "'SF' generates SCR_MissionHeader for Scenario Framework single-player/co-op narrative missions."
+          ),
+        author: z
+          .string()
+          .optional()
+          .describe("Scenario author name (mission-header Conflict mode)"),
+        gameModeLabel: z
+          .string()
+          .optional()
+          .describe("Game mode display name, e.g. 'Conflict', 'Seize & Secure' (mission-header Conflict mode, default 'Conflict')"),
+        playerCount: z
+          .number()
+          .optional()
+          .describe("Max player count (mission-header Conflict mode, default 40)"),
+        xpMultiplier: z
+          .number()
+          .optional()
+          .describe("XP multiplier, e.g. 0.5 for PvE (mission-header Conflict mode, omitted if 1.0)"),
         prefabRefs: z
           .array(z.string())
           .optional()
@@ -77,6 +101,11 @@ export function registerConfigCreate(
       worldPath,
       scenarioName,
       scenarioDescription,
+      missionMode,
+      author,
+      gameModeLabel,
+      playerCount,
+      xpMultiplier,
       prefabRefs,
       categoryName,
       projectPath,
@@ -95,6 +124,11 @@ export function registerConfigCreate(
           worldPath,
           scenarioName,
           scenarioDescription,
+          missionMode,
+          author,
+          gameModeLabel,
+          playerCount,
+          xpMultiplier,
           prefabRefs,
           categoryName,
         });
@@ -142,6 +176,7 @@ export function registerConfigCreate(
         const msg = e instanceof Error ? e.message : String(e);
         return {
           content: [{ type: "text", text: `Error creating config: ${msg}` }],
+        isError: true,
         };
       }
     }

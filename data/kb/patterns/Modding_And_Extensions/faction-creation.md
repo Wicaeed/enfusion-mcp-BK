@@ -73,6 +73,73 @@ Then override `EditableEntityCore.conf` and add entry with Label Type = your new
 
 ---
 
+## Conflict Multiplayer — Faction Wiring
+
+In Conflict scenarios, factions must be wired into several systems beyond the basic faction config.
+
+### Faction keys
+Vanilla Conflict uses exactly these case-sensitive keys: `"US"`, `"USSR"`, `"FIA"`. Custom factions must match wherever the key is referenced.
+
+### CampaignFactionManager_Seize.et
+The faction manager prefab controls which factions participate and their loadout managers.
+
+```
+SCR_CampaignFactionManager CampaignFactionManager1 : "{F1AC26310BAE3788}Prefabs/MP/Campaign/CampaignFactionManager_Seize.et" {
+ coords 0 0 0
+}
+```
+
+To add a custom faction: override `CampaignFactionManager_Seize.et`, add your faction to the `m_aFactions` array, and point it to your faction config.
+
+### SCR_FactionAffiliationComponent on base entities
+Every `ConflictMilitaryBase` gets a starting owner via `SCR_FactionAffiliationComponent`:
+
+```
+// Inside a base entity block in Bases.layer:
+SCR_FactionAffiliationComponent {
+ "faction affiliation" "US"
+}
+```
+
+In layer files this is inherited from the prefab defaults — override explicitly in the named entity block only when changing from the prefab default.
+
+### Faction keys in scripts
+
+```c
+// Get faction by key
+FactionManager factionMgr = GetGame().GetFactionManager();
+Faction faction = factionMgr.GetFactionByKey("US");
+
+// Check faction of a base
+SCR_CampaignMilitaryBaseComponent base = ...;
+Faction owner = base.GetFaction();
+string key = owner.GetFactionKey(); // "US", "USSR", "FIA"
+
+// Radio coverage check (faction-specific)
+SCR_ERadioCoverageStatus status = base.IsHQRadioTrafficPossible(faction);
+```
+
+### Loadout manager per faction
+Each faction in Conflict has a loadout manager configured in `CampaignFactionManager_Seize.et`. For custom factions, create a `CampaignLoadoutManager_Seize.et` override per faction and register it.
+
+### AAD / AAS faction roles
+In asymmetric mods (ConflictEscalation, SeizeAMPSecure), factions are assigned attacker/defender roles:
+
+```c
+modded class SCR_GameModeCampaign
+{
+    [Attribute("FIA", UIWidgets.EditBox, "Defending faction key")]
+    protected string m_sAADDefendingFaction;
+
+    [Attribute("US", UIWidgets.EditBox, "Attacking faction key")]
+    protected string m_sAADAttackingFaction;
+}
+```
+
+Bases use `m_sFactionKey` on `SCR_ScenarioFrameworkArea` entities to restrict visibility to one faction.
+
+---
+
 ## File/Directory Conventions
 
 Key folders in a faction mod:

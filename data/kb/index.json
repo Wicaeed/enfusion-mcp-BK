@@ -186,6 +186,42 @@
     "keywords": ["capture", "hold", "cah", "conflict", "gamemode", "score", "time", "area", "zone", "spawn", "faction", "mission", "header", "supply", "rank"]
   },
   {
+    "path": "GameModes_And_Scenarios/conflict-scenario-setup.md",
+    "title": "Conflict Scenario Setup",
+    "description": "Complete guide for building Conflict multiplayer scenarios: SCR_MissionHeaderCampaign, world SubScene pattern, military bases, ambient patrols, defender spawners, CHZones, game mode modding, common pitfalls",
+    "keywords": ["conflict", "campaign", "multiplayer", "scenario", "mission", "header", "militarybase", "base", "mob", "hq", "patrol", "ambient", "spawn", "defender", "barracks", "cah", "seize", "gamemode", "modded", "subScene", "world", "faction", "supply", "radio", "coverage", "pve", "pvp", "harbor", "airfield", "vehicle", "layer", "worldsetup", "navmesh", "perception", "battleprepzone", "supplydepot", "seedingzone", "threshold", "fia", "us", "ussr", "conlict"]
+  },
+  {
+    "path": "GameModes_And_Scenarios/conflict-layer-reference.md",
+    "title": "Conflict Layer Reference",
+    "description": "Full layer taxonomy (40+ layer types), all prefab GUIDs (bases, patrols, vehicles, waypoints, fortifications, world setup), component property tables by role, production design patterns. Sourced from 2,000+ layer files across 7 mods.",
+    "keywords": ["conflict", "layer", "guid", "prefab", "ambientpatrol", "ambientvehicle", "bases", "cah", "defenders", "harbors", "supplies", "seeding", "mob", "fortification", "composition", "worldsetup", "fia", "us", "ussr", "vehicle", "spawn", "radio", "supply", "threshold", "faction", "waypoint", "defend", "patrol", "cache", "depot", "airfield", "harbor", "checkpoint", "barricade"]
+  },
+  {
+    "path": "GameModes_And_Scenarios/conflict-supply-system.md",
+    "title": "Conflict Supply System",
+    "description": "Supply income flow (HQ/base/relay/harbor tiers), all gamemode supply attributes with defaults, rank-based allocation, per-base overrides, supply vehicle API, script query methods, scenario balance guidelines.",
+    "keywords": ["supply", "supplies", "income", "harbor", "airfield", "mob", "hq", "relay", "replenish", "threshold", "rank", "allocation", "vehicle", "truck", "depot", "resource", "economy", "conflict", "campaign", "multiplayer", "base", "building"]
+  },
+  {
+    "path": "GameModes_And_Scenarios/conflict-building-compositions.md",
+    "title": "Conflict Building & Composition System",
+    "description": "SCR_CampaignBuildingProviderComponent, budget system (CAMPAIGN/PROPS/AI), composition costs, relay radio structure and reconfiguration, slot types, composition slot manager API, master provider pattern.",
+    "keywords": ["building", "composition", "fortification", "relay", "radio", "budget", "supplies", "slot", "provider", "master", "sandbag", "bunker", "barricade", "checkpoint", "conflict", "campaign", "place", "construct", "build"]
+  },
+  {
+    "path": "GameModes_And_Scenarios/conflict-seeding-system.md",
+    "title": "Conflict Seeding System",
+    "description": "Full seeding setup: gamemode attributes, seeding manager state machine, restriction zone auto-size, seeding spawn points, seeding AI patrols, SeedingPvpZone.layer pattern, complete checklist.",
+    "keywords": ["seeding", "server", "population", "restriction", "zone", "threshold", "mob", "spawn", "patrol", "seeding patrol", "low pop", "conflict", "campaign", "layer", "spawnpoint", "hq"]
+  },
+  {
+    "path": "GameModes_And_Scenarios/modded-gamemode-cookbook.md",
+    "title": "Modded Game Mode Cookbook",
+    "description": "10 production-verified modded class SCR_GameModeCampaign patterns: seeding, battle prep, AAD/AAS, supply distribution, base building rules, scaled respawn, auto-load save, spawn validation, XP persistence, ambient AI battles.",
+    "keywords": ["modded", "gamemode", "campaign", "override", "seeding", "battleprepzone", "aad", "aas", "asymmetric", "respawn", "xp", "rank", "persistence", "save", "load", "spawn", "validation", "supply", "distribution", "ambient", "ai", "attribute", "scr_gamemodecampaign"]
+  },
+  {
     "path": "Inventory_And_Damage/damage-system.md",
     "title": "Damage System",
     "description": "DamageManager class hierarchy, damage flow, scripting callbacks, SetHealth() pitfall, mod-compatible damage patterns",

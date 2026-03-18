@@ -47,6 +47,7 @@ import { registerGameDuplicate } from "./tools/game-duplicate.js";
 import { registerWbEntityDuplicate } from "./tools/wb-entity-duplicate.js";
 import { registerWorkshopInfo } from "./tools/workshop-info.js";
 import { registerScenarioTools } from "./tools/wb-scenario.js";
+import { registerScenarioCreate } from "./tools/scenario-create.js";
 import { registerAnimationGraphInspect } from "./tools/animation-graph-inspect.js";
 import { registerAnimationGraphAuthor } from "./tools/animation-graph-author.js";
 import { registerAnimationGraphSetup } from "./tools/animation-graph-setup.js";
@@ -104,6 +105,7 @@ export function registerTools(server: McpServer, config: Config): void {
   registerWbValidate(server, wbClient);
   registerWbState(server, wbClient);
   registerScenarioTools(server, wbClient);
+  registerScenarioCreate(server, config);
 
   // Base game access tools
   registerGameBrowse(server, config);
