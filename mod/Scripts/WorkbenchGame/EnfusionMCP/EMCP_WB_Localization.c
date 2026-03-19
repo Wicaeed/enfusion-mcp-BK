@@ -1,7 +1,7 @@
 /**
  * EMCP_WB_Localization.c - Localization editor handler
  *
- * Actions: insert, delete, modify, getTable
+ * Actions: insert, delete, modify, getTable, listLanguages
  * Uses the LocalizationEditor Workbench module.
  * Called via NET API TCP protocol: APIFunc = "EMCP_WB_Localization"
  */

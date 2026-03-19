@@ -114,7 +114,6 @@ export function registerWbLocalization(server: McpServer, client: WorkbenchClien
           insert: `Inserted localization entry: **${itemId}**`,
           delete: `Deleted localization entry: **${itemId}**`,
           modify: `Modified **${itemId}**.${property} = "${value || ""}"`,
-          listLanguages: "Listed language columns",
         };
 
         return {
