@@ -259,9 +259,14 @@ export function registerWbEntityTools(server: McpServer, client: WorkbenchClient
       inputSchema: {
         name: z.string().describe("Name of the entity to modify"),
         action: z
-          .enum(["move", "rotate", "rename", "reparent", "setProperty", "clearProperty", "getProperty", "listProperties", "listArrayItems", "addArrayItem", "removeArrayItem", "setObjectClass"])
+          .enum([
+            "move", "rotate", "rename", "reparent",
+            "setProperty", "clearProperty", "getProperty", "listProperties",
+            "listArrayItems", "addArrayItem", "removeArrayItem", "setObjectClass",
+            "getWorldTransform", "makeVisible",
+          ])
           .describe(
-            "Modification action: move (set position), rotate (set rotation), rename, reparent (change parent entity), setProperty (set a component property), clearProperty (reset to default), getProperty (read a property value), listProperties (list all property names on entity or component), listArrayItems (list items in an array-of-objects property with class names and indices), addArrayItem (append item to array-of-objects property — like the + button), removeArrayItem (remove item from array by index), setObjectClass (change class of an object property — like the dropdown)"
+            "Modification action: move (set position), rotate (set rotation), rename, reparent (change parent entity), setProperty (set a component property), clearProperty (reset to default), getProperty (read a property value), listProperties (list all property names on entity or component), listArrayItems (list items in an array-of-objects property with class names and indices), addArrayItem (append item to array-of-objects property — like the + button), removeArrayItem (remove item from array by index), setObjectClass (change class of an object property — like the dropdown), getWorldTransform (read world position and rotation), makeVisible (scroll World Editor hierarchy to this entity)"
           ),
         value: z
           .string()
@@ -285,7 +290,7 @@ export function registerWbEntityTools(server: McpServer, client: WorkbenchClient
     },
     async ({ name, action, value, propertyPath, propertyKey, memberIndex }) => {
       // Only require edit mode for mutating actions, not read-only ones
-      const READ_ONLY_ACTIONS = ["getProperty", "listProperties", "listArrayItems"];
+      const READ_ONLY_ACTIONS = ["getProperty", "listProperties", "listArrayItems", "getWorldTransform", "makeVisible"];
       if (!READ_ONLY_ACTIONS.includes(action)) {
         const modeErr = requireEditMode(client, "modify entity");
         if (modeErr) {
@@ -322,6 +327,37 @@ export function registerWbEntityTools(server: McpServer, client: WorkbenchClient
 
         const result = await client.call<Record<string, unknown>>("EMCP_WB_ModifyEntity", params);
 
+        // Special output for getWorldTransform
+        if (action === "getWorldTransform") {
+          const props = Array.isArray(result.properties) ? result.properties : [];
+          const pos = (props as Record<string, unknown>[]).find((p) => p.name === "position");
+          const rot = (props as Record<string, unknown>[]).find((p) => p.name === "rotation");
+          return {
+            content: [{
+              type: "text" as const,
+              text: `**Transform: ${name}**\n\n- **Position:** ${pos?.value || "(unknown)"}\n- **Rotation:** ${rot?.value || "(unknown)"}${formatConnectionStatus(client)}`,
+            }],
+          };
+        }
+
+        // Enhanced output for listProperties
+        if (action === "listProperties") {
+          const props = Array.isArray(result.properties) ? result.properties : [];
+          if (props.length === 0) {
+            return { content: [{ type: "text" as const, text: `**No properties found.**${formatConnectionStatus(client)}` }] };
+          }
+          const lines = [
+            `**Properties${propertyPath ? " of " + propertyPath : ""}** (${props.length})\n`,
+            "| Property | Value |",
+            "|---|---|",
+          ];
+          for (const p of props) {
+            const prop = p as Record<string, unknown>;
+            lines.push(`| ${prop.name} | ${prop.value || ""} |`);
+          }
+          return { content: [{ type: "text" as const, text: lines.join("\n") + formatConnectionStatus(client) }] };
+        }
+
         const actionLabels: Record<string, string> = {
           move: `Moved to ${value}`,
           rotate: `Rotated to ${value}`,
@@ -335,6 +371,8 @@ export function registerWbEntityTools(server: McpServer, client: WorkbenchClient
           addArrayItem: `Added '${value}' to '${propertyKey || "array"}' at index ${memberIndex ?? -1}`,
           removeArrayItem: `Removed index ${memberIndex ?? 0} from '${propertyKey || "array"}'`,
           setObjectClass: `Changed class of '${propertyKey || "property"}' to '${value}'`,
+          getWorldTransform: `Got world transform of ${name}`,
+          makeVisible: `Scrolled to ${name}`,
         };
 
         return {

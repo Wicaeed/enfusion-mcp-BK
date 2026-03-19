@@ -26,12 +26,20 @@ class EMCP_WB_ModifyEntityRequest : JsonApiStruct
 	}
 }
 
+class EMCP_WB_EntityProperty
+{
+	string m_sName;
+	string m_sType;
+	string m_sValue;
+}
+
 class EMCP_WB_ModifyEntityResponse : JsonApiStruct
 {
 	string status;
 	string message;
 	string entityName;
 	string action;
+	ref array<ref EMCP_WB_EntityProperty> m_aProperties;
 
 	void EMCP_WB_ModifyEntityResponse()
 	{
@@ -39,6 +47,25 @@ class EMCP_WB_ModifyEntityResponse : JsonApiStruct
 		RegV("message");
 		RegV("entityName");
 		RegV("action");
+		m_aProperties = {};
+	}
+
+	override void OnPack()
+	{
+		if (m_aProperties.Count() > 0)
+		{
+			StartArray("properties");
+			for (int i = 0; i < m_aProperties.Count(); i++)
+			{
+				EMCP_WB_EntityProperty p = m_aProperties[i];
+				StartObject("");
+				StoreString("name", p.m_sName);
+				StoreString("type", p.m_sType);
+				StoreString("value", p.m_sValue);
+				EndObject();
+			}
+			EndArray();
+		}
 	}
 }
 
@@ -326,11 +353,9 @@ class EMCP_WB_ModifyEntity : NetApiHandler
 		}
 		else if (req.action == "listProperties")
 		{
-			string result = "";
-
+			IEntityComponentSource compSrc = null;
 			if (req.propertyPath != "")
 			{
-				IEntityComponentSource compSrc = null;
 				int compCount = entSrc.GetComponentCount();
 				for (int ci = 0; ci < compCount; ci++)
 				{
@@ -347,25 +372,28 @@ class EMCP_WB_ModifyEntity : NetApiHandler
 					resp.message = "Component not found: " + req.propertyPath;
 					return resp;
 				}
-				int numVars = compSrc.GetNumVars();
-				for (int v = 0; v < numVars; v++)
-				{
-					if (result != "") result += ", ";
-					result += compSrc.GetVarName(v);
-				}
 			}
-			else
+
+			int numVars = compSrc ? compSrc.GetNumVars() : entSrc.GetNumVars();
+			for (int v = 0; v < numVars; v++)
 			{
-				int numVars = entSrc.GetNumVars();
-				for (int v = 0; v < numVars; v++)
-				{
-					if (result != "") result += ", ";
-					result += entSrc.GetVarName(v);
-				}
+				string varName = compSrc ? compSrc.GetVarName(v) : entSrc.GetVarName(v);
+				string varValue = "";
+				if (compSrc)
+					compSrc.Get(varName, varValue);
+				else
+					entSrc.Get(varName, varValue);
+
+				EMCP_WB_EntityProperty prop = new EMCP_WB_EntityProperty();
+				prop.m_sName = varName;
+				prop.m_sType = "";  // type info not available via script API — leave empty
+				prop.m_sValue = varValue;
+				resp.m_aProperties.Insert(prop);
 			}
 
 			resp.status = "ok";
-			resp.message = result;
+			resp.message = "Listed " + resp.m_aProperties.Count().ToString() + " properties" +
+				(req.propertyPath != "" ? " of " + req.propertyPath : "");
 		}
 		else if (req.action == "listArrayItems")
 		{
@@ -595,10 +623,36 @@ class EMCP_WB_ModifyEntity : NetApiHandler
 				resp.message = "ChangeObjectClass returned false — check class name";
 			}
 		}
+		else if (req.action == "getWorldTransform")
+		{
+			// Read position and rotation using known property names from the editor.
+			// "coords" = world position, "angleX/Y/Z" = euler rotation angles.
+			// These are confirmed: "move" uses "coords" for SetVariableValue, "rotate" uses angleX/Y/Z.
+			string coords, angleX, angleY, angleZ;
+			entSrc.Get("coords", coords);
+			entSrc.Get("angleX", angleX);
+			entSrc.Get("angleY", angleY);
+			entSrc.Get("angleZ", angleZ);
+
+			EMCP_WB_EntityProperty posProp = new EMCP_WB_EntityProperty();
+			posProp.m_sName = "position";
+			posProp.m_sType = "vector";
+			posProp.m_sValue = coords;
+			resp.m_aProperties.Insert(posProp);
+
+			EMCP_WB_EntityProperty rotProp = new EMCP_WB_EntityProperty();
+			rotProp.m_sName = "rotation";
+			rotProp.m_sType = "vector";
+			rotProp.m_sValue = angleX + " " + angleY + " " + angleZ;
+			resp.m_aProperties.Insert(rotProp);
+
+			resp.status = "ok";
+			resp.message = "Transform for: " + req.name;
+		}
 		else
 		{
 			resp.status = "error";
-			resp.message = "Unknown action: " + req.action + ". Valid: move, rotate, rename, reparent, setProperty, clearProperty, getProperty, listProperties, listArrayItems, addArrayItem, removeArrayItem, setObjectClass";
+			resp.message = "Unknown action: " + req.action + ". Valid: move, rotate, rename, reparent, setProperty, clearProperty, getProperty, listProperties, listArrayItems, addArrayItem, removeArrayItem, setObjectClass, getWorldTransform, makeVisible";
 		}
 
 		return resp;
