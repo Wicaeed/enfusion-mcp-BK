@@ -171,7 +171,12 @@ function generateModded(className: string, parent: string, methods?: string[]): 
 
 function generateComponent(className: string, parent: string, methods?: string[]): string[] {
   const lines: string[] = [];
+  // Enfusion requires a paired *Class definition for every ScriptComponent
   lines.push("[ComponentEditorProps(category: \"GameScripted\", description: \"\")]");
+  lines.push(`class ${className}Class : ${parent}Class`);
+  lines.push("{");
+  lines.push("}");
+  lines.push("");
   lines.push(`class ${className} : ${parent}`);
   lines.push("{");
   lines.push("  // Member variables");
