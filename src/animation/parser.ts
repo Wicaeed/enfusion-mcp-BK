@@ -2,6 +2,7 @@ import type {
   ParsedAgr, ParsedVariable, ParsedCommand, ParsedIkChain, ParsedBoneMask,
   ParsedAgf, ParsedSheet, ParsedNode,
   ParsedQueueItem, ParsedState, ParsedTransition, ParsedBoneItem,
+  ParsedAst, ParsedAsi, ParsedAsiMapping, ParsedAnimGroup, ParsedAw,
 } from "./types.js";
 
 export function escapeRegExp(s: string): string {
@@ -382,4 +383,70 @@ export function parseAgfToStruct(content: string): ParsedAgf {
   }
 
   return { sheets };
+}
+
+// --- AST Parser ---
+
+export function parseAstToStruct(content: string): ParsedAst {
+  const groups: ParsedAnimGroup[] = extractBlocks(content, "AnimSetTemplateSource_AnimationGroup")
+    .map(({ name, body }) => ({
+      name,
+      animationNames: extractStringArray(body, "AnimationNames"),
+      columnNames: extractStringArray(body, "ColumnNames"),
+    }));
+  return { groups };
+}
+
+// --- ASI Parser ---
+
+export function parseAsiToStruct(content: string): ParsedAsi {
+  const mappings: ParsedAsiMapping[] = [];
+  const groups = extractBlocks(content, "AnimSetInstanceSource_AnimationGroup");
+
+  for (const { name: groupName, body: groupBody } of groups) {
+    const animNames = extractStringArray(groupBody, "AnimationNames");
+    const columns = extractBlocks(groupBody, "AnimSetInstanceColumn");
+
+    for (const { name: colName, body: colBody } of columns) {
+      const animPaths = extractStringArray(colBody, "Animations");
+
+      for (let i = 0; i < animNames.length; i++) {
+        const rawPath = i < animPaths.length ? animPaths[i] : "";
+        const anmPath = rawPath === "" ? null : rawPath.replace(/^\{[^}]*\}/, "");
+        mappings.push({
+          group: groupName,
+          column: colName,
+          animation: animNames[i],
+          anmPath,
+        });
+      }
+    }
+  }
+
+  return { mappings };
+}
+
+// --- AW Parser ---
+
+export function parseAwToStruct(content: string): ParsedAw {
+  const animGraph = extractProp(content, "AnimGraph");
+  const animSetTemplate = extractProp(content, "AnimSetTemplate");
+  const animSetInstances = extractStringArray(content, "AnimSetInstances");
+
+  const previewModels: string[] = [];
+  for (const { body } of extractBlocks(content, "AnimSrcWorkspacePreviewModel")) {
+    const model = extractProp(body, "Model");
+    if (model) previewModels.push(model);
+  }
+
+  const childPreviewModels: Array<{ model: string; bone: string; enabled: boolean }> = [];
+  for (const { body } of extractBlocks(content, "AnimSrcWorkspaceChildPreviewModel")) {
+    childPreviewModels.push({
+      model: extractProp(body, "Model") ?? "(unknown)",
+      bone: extractProp(body, "Bone") ?? "(no bone)",
+      enabled: extractProp(body, "Enabled") !== "0",
+    });
+  }
+
+  return { animGraph, animSetTemplate, animSetInstances, previewModels, childPreviewModels };
 }
