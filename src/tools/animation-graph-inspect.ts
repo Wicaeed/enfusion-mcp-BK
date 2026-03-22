@@ -1,374 +1,49 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { readFileSync, existsSync } from "node:fs";
-import { join, extname, resolve } from "node:path";
+import { join, extname } from "node:path";
 import type { Config } from "../config.js";
 import { validateProjectPath } from "../utils/safe-path.js";
 import { PakVirtualFS } from "../pak/vfs.js";
+import {
+  parseAgrToStruct, parseAgfToStruct, parseAstToStruct,
+  parseAsiToStruct, parseAwToStruct,
+} from "../animation/parser.js";
+import {
+  formatAgrSummary, formatAgfTree, formatAstSummary,
+  formatAsiSummary, formatAwSummary, formatValidationReport,
+} from "../animation/formatter.js";
 
-// ── Parser helpers ────────────────────────────────────────────────────────────
+// ── File reading helper ──────────────────────────────────────────────────────
 
-/**
- * Extract all named top-level blocks of a given type from Enfusion text format.
- * Matches: "TypeName Name {" or "TypeName Name{" (handles optional whitespace).
- * Handles nested braces to correctly determine block boundaries.
- */
-function extractBlocks(
-  text: string,
-  typeName: string
-): Array<{ name: string; body: string }> {
-  const results: Array<{ name: string; body: string }> = [];
-  // Match the opening line: TypeName followed by optional quoted or unquoted name, then "{"
-  const openRe = new RegExp(
-    `^[ \\t]*${escapeRegExp(typeName)}[ \\t]+"?([^"\\s{][^{]*?)"?[ \\t]*\\{[ \\t]*$`,
-    "gm"
-  );
-
-  let match: RegExpExecArray | null;
-  while ((match = openRe.exec(text)) !== null) {
-    const name = match[1].trim().replace(/^"|"$/g, "");
-    const openBrace = text.indexOf("{", match.index + match[0].indexOf("{"));
-    // Walk forward counting braces to find the matching closing brace
-    let depth = 1;
-    let i = openBrace + 1;
-    while (i < text.length && depth > 0) {
-      if (text[i] === "{") depth++;
-      else if (text[i] === "}") depth--;
-      i++;
-    }
-    const body = text.slice(openBrace + 1, i - 1);
-    results.push({ name, body });
-  }
-  return results;
-}
-
-/**
- * Extract a simple scalar property value from a block body.
- * Matches: "  PropName value" or "  PropName \"value\""
- * Returns the unquoted value, or null if not found.
- */
-function extractProp(body: string, propName: string): string | null {
-  const re = new RegExp(
-    `^[ \\t]*${escapeRegExp(propName)}[ \\t]+"?([^"\\n\\r]+?)"?[ \\t]*$`,
-    "m"
-  );
-  const m = body.match(re);
-  if (!m) return null;
-  return m[1].trim().replace(/^"|"$/g, "");
-}
-
-/**
- * Extract a string array block of the form:
- *   PropName {
- *     "item1"
- *     "item2"
- *   }
- * Returns array of unquoted string values.
- */
-function extractStringArray(body: string, propName: string): string[] {
-  // Find the block start
-  const startRe = new RegExp(
-    `^[ \\t]*${escapeRegExp(propName)}[ \\t]*\\{`,
-    "m"
-  );
-  const startMatch = body.match(startRe);
-  if (!startMatch || startMatch.index === undefined) return [];
-
-  const openPos = body.indexOf("{", startMatch.index + startMatch[0].lastIndexOf("{") - 1);
-  // Find matching closing brace
-  let depth = 1;
-  let i = openPos + 1;
-  while (i < body.length && depth > 0) {
-    if (body[i] === "{") depth++;
-    else if (body[i] === "}") depth--;
-    i++;
-  }
-  const inner = body.slice(openPos + 1, i - 1);
-  // Extract quoted strings
-  const items: string[] = [];
-  const itemRe = /"([^"\n\r]*)"/g;
-  let m: RegExpExecArray | null;
-  while ((m = itemRe.exec(inner)) !== null) {
-    items.push(m[1]);
-  }
-  return items;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// ── AGR parser ────────────────────────────────────────────────────────────────
-
-/**
- * Parse an AGR (Animation Graph Resource) file and return a structured summary.
- */
-function parseAgr(content: string): string {
-  const lines: string[] = [];
-
-  lines.push("=== AGR Summary ===\n");
-
-  // Variables — Float, Int, Bool
-  const varTypes: Record<string, string> = {
-    AnimSrcGCTVarFloat: "Float",
-    AnimSrcGCTVarInt: "Int",
-    AnimSrcGCTVarBool: "Bool",
-  };
-
-  const varsByType: Record<string, string[]> = { Float: [], Int: [], Bool: [] };
-
-  for (const [typeName, label] of Object.entries(varTypes)) {
-    const blocks = extractBlocks(content, typeName);
-    for (const { name, body } of blocks) {
-      const min = extractProp(body, "Min") ?? "?";
-      const max = extractProp(body, "Max") ?? "?";
-      const def = extractProp(body, "Default") ?? extractProp(body, "DefaultValue") ?? "?";
-      varsByType[label].push(`  ${name} (${label}) [${min}..${max}] default=${def}`);
-    }
-  }
-
-  const totalVars =
-    varsByType.Float.length + varsByType.Int.length + varsByType.Bool.length;
-  lines.push(`Variables (${totalVars}):`);
-  for (const label of ["Float", "Int", "Bool"]) {
-    if (varsByType[label].length > 0) {
-      lines.push(`  -- ${label} --`);
-      for (const v of varsByType[label]) lines.push(v);
-    }
-  }
-  if (totalVars === 0) lines.push("  (none)");
-  lines.push("");
-
-  // Commands
-  const cmdBlocks = extractBlocks(content, "AnimSrcGCTCmd");
-  lines.push(`Commands (${cmdBlocks.length}):`);
-  if (cmdBlocks.length > 0) {
-    for (const { name } of cmdBlocks) lines.push(`  ${name}`);
-  } else {
-    lines.push("  (none)");
-  }
-  lines.push("");
-
-  // IK Chains
-  const ikBlocks = extractBlocks(content, "AnimSrcGCTIkChain");
-  lines.push(`IK Chains (${ikBlocks.length}):`);
-  if (ikBlocks.length > 0) {
-    for (const { name, body } of ikBlocks) {
-      const jointCount = extractProp(body, "JointCount") ?? "?";
-      const midJoint = extractProp(body, "MiddleJoint");
-      const chainAxis = extractProp(body, "ChainAxis");
-      let detail = `  ${name} — joints: ${jointCount}`;
-      if (midJoint) detail += `, MiddleJoint: ${midJoint}`;
-      if (chainAxis) detail += `, ChainAxis: ${chainAxis}`;
-      lines.push(detail);
-    }
-  } else {
-    lines.push("  (none)");
-  }
-  lines.push("");
-
-  // Bone Masks
-  const maskBlocks = extractBlocks(content, "AnimSrcGCTBoneMask");
-  lines.push(`Bone Masks (${maskBlocks.length}):`);
-  if (maskBlocks.length > 0) {
-    for (const { name, body } of maskBlocks) {
-      const bones = extractStringArray(body, "BoneNames");
-      const boneCount = bones.length;
-      lines.push(`  ${name} — ${boneCount} bone(s)`);
-    }
-  } else {
-    lines.push("  (none)");
-  }
-  lines.push("");
-
-  // GlobalTags
-  const globalTags = extractStringArray(content, "GlobalTags");
-  lines.push(`GlobalTags (${globalTags.length}):`);
-  if (globalTags.length > 0) {
-    for (const t of globalTags) lines.push(`  ${t}`);
-  } else {
-    lines.push("  (none)");
-  }
-  lines.push("");
-
-  // DefaultRunNode
-  const defaultRunNode = extractProp(content, "DefaultRunNode");
-  lines.push(`DefaultRunNode: ${defaultRunNode ?? "(not set)"}`);
-  lines.push("");
-
-  // AGF References
-  const agfRefs = extractStringArray(content, "GraphFilesResourceNames");
-  lines.push(`AGF References (${agfRefs.length}):`);
-  if (agfRefs.length > 0) {
-    for (const ref of agfRefs) lines.push(`  ${ref}`);
-  } else {
-    lines.push("  (none)");
-  }
-
-  return lines.join("\n");
-}
-
-// ── AGF parser ────────────────────────────────────────────────────────────────
-
-/**
- * Parse an AGF (Animation Graph File) and return a structured summary.
- */
-function parseAgf(content: string): string {
-  const lines: string[] = [];
-
-  lines.push("=== AGF Summary ===\n");
-
-  const sheetBlocks = extractBlocks(content, "AnimSrcGraphSheet");
-  lines.push(`Sheets (${sheetBlocks.length}):`);
-
-  if (sheetBlocks.length === 0) {
-    lines.push("  (none)");
-  }
-
-  for (const { name: sheetName, body: sheetBody } of sheetBlocks) {
-    lines.push(`\n  Sheet: ${sheetName}`);
-
-    // Find all AnimSrcNode* type blocks within this sheet body
-    // The type names all start with "AnimSrcNode"
-    const nodeRe =
-      /^[ \t]*(AnimSrcNode\S+)[ \t]+"?([^"\n\r{][^{\n\r]*?)"?[ \t]*\{/gm;
-    let nodeMatch: RegExpExecArray | null;
-    let nodeCount = 0;
-    while ((nodeMatch = nodeRe.exec(sheetBody)) !== null) {
-      nodeCount++;
-      const nodeType = nodeMatch[1];
-      const nodeName = nodeMatch[2].trim().replace(/^"|"$/g, "");
-
-      // Find body of this node to look for Child reference
-      const openPos = sheetBody.indexOf(
-        "{",
-        nodeMatch.index + nodeMatch[0].lastIndexOf("{") - 1
-      );
-      let depth = 1;
-      let i = openPos + 1;
-      while (i < sheetBody.length && depth > 0) {
-        if (sheetBody[i] === "{") depth++;
-        else if (sheetBody[i] === "}") depth--;
-        i++;
+function readFileForTool(
+  filePath: string,
+  source: "mod" | "game",
+  projectPath: string | undefined,
+  config: Config,
+): string | null {
+  try {
+    if (source === "mod") {
+      const basePath = projectPath || config.projectPath;
+      if (!basePath) return null;
+      const fullPath = validateProjectPath(basePath, filePath);
+      if (!existsSync(fullPath)) return null;
+      return readFileSync(fullPath, "utf-8");
+    } else {
+      const dataPath = join(config.gamePath, "addons", "data");
+      const loosePath = validateProjectPath(dataPath, filePath);
+      if (existsSync(loosePath)) {
+        return readFileSync(loosePath, "utf-8");
       }
-      const nodeBody = sheetBody.slice(openPos + 1, i - 1);
-      const child = extractProp(nodeBody, "Child");
-
-      let entry = `    [${nodeType}] ${nodeName}`;
-      if (child) entry += ` -> Child: ${child}`;
-      lines.push(entry);
+      const pakVfs = PakVirtualFS.get(config.gamePath);
+      if (pakVfs && pakVfs.exists(filePath)) {
+        return pakVfs.readFile(filePath).toString("utf-8");
+      }
+      return null;
     }
-
-    if (nodeCount === 0) {
-      lines.push("    (no nodes found)");
-    }
+  } catch {
+    return null;
   }
-
-  return lines.join("\n");
-}
-
-// ── AST parser ────────────────────────────────────────────────────────────────
-
-/**
- * Parse an AST (Animation Set Template) file and return a structured summary.
- */
-function parseAst(content: string): string {
-  const lines: string[] = [];
-
-  lines.push("=== AST Summary ===\n");
-
-  const groupBlocks = extractBlocks(
-    content,
-    "AnimSetTemplateSource_AnimationGroup"
-  );
-
-  lines.push(`Animation Groups (${groupBlocks.length}):`);
-
-  if (groupBlocks.length === 0) {
-    lines.push("  (none)");
-  }
-
-  for (const { name: groupName, body } of groupBlocks) {
-    const animNames = extractStringArray(body, "AnimationNames");
-    const columnNames = extractStringArray(body, "ColumnNames");
-
-    lines.push(`\n  Group: ${groupName}`);
-    lines.push(
-      `    Animations (${animNames.length}): ${
-        animNames.length > 0 ? animNames.join(", ") : "(none)"
-      }`
-    );
-    lines.push(
-      `    Columns (${columnNames.length}): ${
-        columnNames.length > 0 ? columnNames.join(", ") : "(none)"
-      }`
-    );
-  }
-
-  return lines.join("\n");
-}
-
-// ── AW parser ─────────────────────────────────────────────────────────────────
-
-/**
- * Parse an AW (Animation Workspace) file and return a structured summary.
- * The .aw file is the Animation Editor project file — it references an AGR, AST,
- * one or more ASI instances, and preview models.
- */
-function parseAw(content: string): string {
-  const lines: string[] = [];
-
-  lines.push("=== AW (Animation Workspace) Summary ===\n");
-
-  // AnimGraph reference
-  const animGraph = extractProp(content, "AnimGraph");
-  lines.push(`AnimGraph (AGR): ${animGraph ?? "(not set)"}`);
-  lines.push("");
-
-  // AnimSetTemplate reference
-  const animSetTemplate = extractProp(content, "AnimSetTemplate");
-  lines.push(`AnimSetTemplate (AST): ${animSetTemplate ?? "(not set)"}`);
-  lines.push("");
-
-  // AnimSetInstances
-  const instances = extractStringArray(content, "AnimSetInstances");
-  lines.push(`AnimSetInstances (ASI) (${instances.length}):`);
-  if (instances.length > 0) {
-    for (const inst of instances) lines.push(`  ${inst}`);
-  } else {
-    lines.push("  (none)");
-  }
-  lines.push("");
-
-  // PreviewModels
-  const previewModelBlocks = extractBlocks(content, "AnimSrcWorkspacePreviewModel");
-  lines.push(`Preview Models (${previewModelBlocks.length}):`);
-  if (previewModelBlocks.length > 0) {
-    for (const { body } of previewModelBlocks) {
-      const model = extractProp(body, "Model") ?? "(unknown)";
-      lines.push(`  ${model}`);
-    }
-  } else {
-    lines.push("  (none)");
-  }
-  lines.push("");
-
-  // ChildPreviewModels
-  const childModelBlocks = extractBlocks(content, "AnimSrcWorkspaceChildPreviewModel");
-  lines.push(`Child Preview Models (${childModelBlocks.length}):`);
-  if (childModelBlocks.length > 0) {
-    for (const { body } of childModelBlocks) {
-      const model = extractProp(body, "Model") ?? "(unknown)";
-      const bone = extractProp(body, "Bone") ?? "(no bone)";
-      const enabled = extractProp(body, "Enabled") ?? "1";
-      const enabledStr = enabled === "0" ? " [disabled]" : "";
-      lines.push(`  ${model} @ bone: ${bone}${enabledStr}`);
-    }
-  } else {
-    lines.push("  (none)");
-  }
-
-  return lines.join("\n");
 }
 
 // ── Tool registration ─────────────────────────────────────────────────────────
@@ -381,17 +56,19 @@ export function registerAnimationGraphInspect(
     "animation_graph_inspect",
     {
       description:
-        "Read and summarize an Arma Reforger animation graph file (.agr, .agf, .ast, or .aw). " +
+        "Read and summarize an Arma Reforger animation graph file (.agr, .agf, .ast, .asi, or .aw). " +
         "Returns structured info: variables with ranges, IK chains, bone masks, commands, node types, or workspace references. " +
-        "Use to audit an existing vehicle animation graph before modifying it. " +
-        "Trigger phrases: 'what variables does X use', 'inspect animation graph', 'read AGR/AGF/AST/AW', " +
-        "'what nodes are in the graph', 'what IK chains does this vehicle have', 'inspect animation workspace'. " +
+        "Use action='inspect' (default) for structured summary, action='validate' for pitfall checks on .agf files. " +
+        "Trigger phrases: 'what variables does X use', 'inspect animation graph', 'read AGR/AGF/AST/ASI/AW', " +
+        "'what nodes are in the graph', 'validate animation graph', 'check animation graph for issues'. " +
         "For new vehicle setup, use animation_graph_setup instead.",
       inputSchema: {
         path: z.string().describe(
-          "File path to .agr, .agf, .ast, or .aw. Relative to mod project (source=mod) or game data root (source=game). " +
-            "Example: 'Assets/Vehicles/MyTruck/workspaces/MyTruck.agr' or 'Anims/TEST/TTESSST.aw'"
+          "File path to .agr, .agf, .ast, .asi, or .aw. Relative to mod project (source=mod) or game data root (source=game). " +
+            "Example: 'Assets/Vehicles/MyTruck/workspaces/MyTruck.agr'"
         ),
+        action: z.enum(["inspect", "validate"]).default("inspect")
+          .describe("Action: inspect (default) returns structured summary; validate runs pitfall checks (requires .agf)"),
         source: z
           .enum(["mod", "game"])
           .default("mod")
@@ -404,23 +81,27 @@ export function registerAnimationGraphInspect(
           .describe(
             "Mod project root path. Uses ENFUSION_PROJECT_PATH default if omitted."
           ),
+        agrPath: z.string().optional()
+          .describe("AGR file path for cross-reference during validate. Same source/projectPath resolution as path."),
+        asiPath: z.string().optional()
+          .describe("ASI file path for cross-reference during validate. Same source/projectPath resolution as path."),
       },
     },
-    async ({ path: filePath, source, projectPath }) => {
+    async ({ path: filePath, action, source, projectPath, agrPath, asiPath }) => {
       const ext = extname(filePath).toLowerCase();
-      if (![".agr", ".agf", ".ast", ".aw"].includes(ext)) {
+      if (![".agr", ".agf", ".ast", ".asi", ".aw"].includes(ext)) {
         return {
           content: [
             {
               type: "text",
-              text: `Unsupported file type: ${ext}. Supported: .agr, .agf, .ast, .aw`,
+              text: `Unsupported file type: ${ext}. Supported: .agr, .agf, .ast, .asi, .aw`,
             },
           ],
         };
       }
 
+      // Read main file
       let content: string;
-
       try {
         if (source === "mod") {
           const basePath = projectPath || config.projectPath;
@@ -439,12 +120,11 @@ export function registerAnimationGraphInspect(
           if (!existsSync(fullPath)) {
             return {
               content: [{ type: "text", text: `File not found: ${filePath}` }],
-            isError: true,
+              isError: true,
             };
           }
           content = readFileSync(fullPath, "utf-8");
         } else {
-          // source === "game" — try loose files then pak
           const dataPath = join(config.gamePath, "addons", "data");
           const loosePath = validateProjectPath(dataPath, filePath);
           if (existsSync(loosePath)) {
@@ -477,11 +157,43 @@ export function registerAnimationGraphInspect(
         };
       }
 
+      // Handle validate action
+      if (action === "validate") {
+        if (ext !== ".agf") {
+          return {
+            content: [{ type: "text", text: "Validate action requires an .agf file as the primary path." }],
+            isError: true,
+          };
+        }
+
+        // Dynamic import to avoid circular deps — validator is implemented in Task 7
+        const { validateGraph } = await import("../animation/validator.js");
+        const agf = parseAgfToStruct(content);
+
+        let agr;
+        if (agrPath) {
+          const agrContent = readFileForTool(agrPath, source, projectPath, config);
+          if (agrContent) agr = parseAgrToStruct(agrContent);
+        }
+
+        let asi;
+        if (asiPath) {
+          const asiContent = readFileForTool(asiPath, source, projectPath, config);
+          if (asiContent) asi = parseAsiToStruct(asiContent);
+        }
+
+        const result = validateGraph(agf, agr, asi, filePath);
+        const report = formatValidationReport(result.issues, result.errorCount, result.warningCount);
+        return { content: [{ type: "text", text: report }] };
+      }
+
+      // Handle inspect action
       let summary: string;
-      if (ext === ".agr") summary = parseAgr(content);
-      else if (ext === ".agf") summary = parseAgf(content);
-      else if (ext === ".aw") summary = parseAw(content);
-      else summary = parseAst(content);
+      if (ext === ".agr") summary = formatAgrSummary(parseAgrToStruct(content));
+      else if (ext === ".agf") summary = formatAgfTree(parseAgfToStruct(content));
+      else if (ext === ".ast") summary = formatAstSummary(parseAstToStruct(content));
+      else if (ext === ".asi") summary = formatAsiSummary(parseAsiToStruct(content));
+      else summary = formatAwSummary(parseAwToStruct(content));
 
       return { content: [{ type: "text", text: summary }] };
     }
