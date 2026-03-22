@@ -1,7 +1,7 @@
 # Driver Spine Jiggle — Design Spec
 
 **Date:** 2026-03-22
-**Status:** Approved
+**Status:** Reviewed
 
 ---
 
@@ -59,9 +59,9 @@ AnimSrcNodeProcTransform DriverSpineJiggle {
  EditorPos -25.3 5.9
  NodeGroup "Jiggles"
  Child "Driver_UnconsciousQ"
- Expression "abs(suspension_0 + suspension_1 + suspension_2 + suspension_3) * sin(GetUpperRTime() * 15) * 0.14"
+ Expression "(abs(suspension_0) + abs(suspension_1) + abs(suspension_2) + abs(suspension_3)) * sin(GetUpperRTime() * 15) * 0.14"
  Bones {
-  AnimSrcNodeProcTrBoneItem "{GUID_A}" {
+  AnimSrcNodeProcTrBoneItem "{A1B2C3D4E5F60001}" {
    Bone "spine_01"
    Axis Y
    Op Translate
@@ -70,20 +70,23 @@ AnimSrcNodeProcTransform DriverSpineJiggle {
 }
 ```
 
-GUIDs are placeholders — must be unique within the file when written.
+**GUID note:** The `{A1B2C3D4E5F60001}` placeholder will be replaced by Workbench with a real GUID on first open/save. Any unique-looking hex string works as the placeholder — just ensure it doesn't literally match another GUID already in the file.
+
+**Node-level `Expression` behaviour:** In `ProcTransform`, the `Expression` field is the per-frame amount applied to all bones that have no `Amount` property. This matches the confirmed pattern from the working `Wipers` node (`Expression "sin(GetUpperRTime() * -pi) * 1.5"`, no `Amount` on bones). No separate `Amount` or `Space` field is required on the bone item.
 
 ---
 
 ## Expression breakdown
 
 ```
-abs(suspension_0 + suspension_1 + suspension_2 + suspension_3) * sin(GetUpperRTime() * 15) * 0.14
+(abs(suspension_0) + abs(suspension_1) + abs(suspension_2) + abs(suspension_3)) * sin(GetUpperRTime() * 15) * 0.14
 ```
 
 | Part | Role |
 |---|---|
-| `suspension_0 + suspension_1 + suspension_2 + suspension_3` | Sum of all 4 wheel suspension compressions (each -1..1, positive = compressed) |
-| `abs(...)` | Ensures both compression and extension contribute positively to amplitude |
+| `abs(suspension_N)` per wheel | Per-wheel absolute compression. Avoids the cancellation problem where left-compress + right-extend would sum to zero even during active suspension travel. Each wheel contributes independently. |
+| `abs(s0) + abs(s1) + abs(s2) + abs(s3)` | Total suspension activity across all wheels (0–4 range) |
+| `abs(...)` — design note | Using `abs()` per-wheel rather than `abs(sum)` means diagonally opposite corners compressing/extending simultaneously still produce full amplitude, not zero. |
 | `sin(GetUpperRTime() * 15)` | Oscillation at ~2.4 Hz — fast enough to feel like vibration |
 | `* 0.14` | Scale factor. At 4-wheel full compression: peak travel = `4 × 0.14 = 0.56` units |
 
@@ -96,7 +99,13 @@ abs(suspension_0 + suspension_1 + suspension_2 + suspension_3) * sin(GetUpperRTi
 
 ## Open question
 
-Bone name `spine_01` must be verified against the M151A2 character rig. If wrong, the ProcTransform is silently ignored (no crash, no visible effect). Verify by checking the base game's human skeleton bone names or observing in-game. Alternative candidates: `spine_02`, `pelvis`.
+Bone name `spine_01` must be verified against the M151A2 character rig. If wrong, the ProcTransform is silently ignored (no crash, no visible effect).
+
+**How to verify:** Check the `IkChains {}` block in the `.agr` — the joint names there reveal the rig naming convention. Alternatively, open the Animation Editor with the character, inspect the bone list. Alternative candidates to try: `spine_02`, `Spine1`, `pelvis`.
+
+**Resolution path:** If `spine_01` produces no visible effect, try `spine_02`, then `pelvis`. The correct name will immediately be obvious in-game.
+
+**Chain note:** Only `Vehicle_Wobble_VarUpdate.Child` changes. `Driver_UnconsciousQ.Child` (which is `VehicleIK 28738`) remains untouched — the rest of the chain is unaffected by this insertion.
 
 ---
 
