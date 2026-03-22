@@ -1,9 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { dirname, join, extname } from "node:path";
 import type { Config } from "../config.js";
 import { validateProjectPath } from "../utils/safe-path.js";
+import { PakVirtualFS } from "../pak/vfs.js";
+import { parseAgrToStruct, parseAgfToStruct } from "../animation/parser.js";
+import { generateSuggestions, formatSuggestions } from "../animation/suggestions.js";
+import { generateGuide } from "../animation/guides.js";
 
 interface VehicleConfig {
   vehicleName: string;
@@ -680,13 +684,16 @@ export function registerAnimationGraphSetup(server: McpServer, config: Config): 
     "animation_graph_setup",
     {
       description:
-        "Full guided workflow wizard for setting up a vehicle animation graph in Arma Reforger. " +
-        "Generates .agr and .ast scaffold files, provides step-by-step Workbench UI instructions " +
-        "for building the AGF node graph, prefab component setup, and verification checklist. " +
-        "PRIMARY entry point for: 'set up vehicle animation', 'create animation graph for vehicle', " +
-        "'vehicle anim graph from scratch', 'how do I set up wheel/suspension animation'.",
+        "Full guided workflow wizard for setting up animation graphs in Arma Reforger. " +
+        "Actions: setup (default) generates .agr/.ast scaffold for vehicles; " +
+        "suggest analyzes an existing graph and recommends improvements; " +
+        "guide provides best-practice guidance for character/weapon/prop/custom animation. " +
+        "PRIMARY entry point for: 'set up vehicle animation', 'create animation graph', " +
+        "'suggest improvements to animation graph', 'guide for character/weapon animation'.",
       inputSchema: {
-        vehicleName: z.string().describe("Vehicle name (e.g. 'MyTruck')."),
+        action: z.enum(["setup", "suggest", "guide"]).default("setup")
+          .describe("Action: setup generates vehicle scaffold; suggest analyzes existing graph; guide provides best-practice guidance"),
+        vehicleName: z.string().optional().describe("Vehicle name (e.g. 'MyTruck'). Required for setup action."),
         vehicleType: z.enum(["wheeled", "tracked", "helicopter", "boat"]).default("wheeled"),
         wheelCount: z.number().int().min(2).max(8).refine(n => n % 2 === 0, "Must be even (2/4/6/8)").default(4),
         hasTurret: z.boolean().default(false),
@@ -703,10 +710,69 @@ export function registerAnimationGraphSetup(server: McpServer, config: Config): 
         step: z
           .enum(["all", "agr", "agf_instructions", "prefab_setup", "checklist"])
           .default("all")
-          .describe("Which section to return. 'all' returns everything."),
+          .describe("Which section to return (setup action only). 'all' returns everything."),
+        agrPath: z.string().optional()
+          .describe("AGR file path for suggest action. Relative to mod project or game data."),
+        agfPath: z.string().optional()
+          .describe("AGF file path for suggest action. Relative to mod project or game data."),
+        preset: z.enum(["character", "weapon", "prop", "custom"]).optional()
+          .describe("Guide preset (guide action only). Available: character, weapon, prop, custom."),
+        source: z.enum(["mod", "game"]).default("mod")
+          .describe("Read from mod project directory (mod) or base game data (game). Used by suggest action."),
       },
     },
     async (opts) => {
+      // Handle guide action
+      if (opts.action === "guide") {
+        const presetName = opts.preset ?? "custom";
+        return { content: [{ type: "text", text: generateGuide(presetName) }] };
+      }
+
+      // Handle suggest action
+      if (opts.action === "suggest") {
+        if (!opts.agfPath) {
+          return { content: [{ type: "text", text: "agfPath is required for suggest action." }], isError: true };
+        }
+        const readFile = (filePath: string): string | null => {
+          try {
+            if (opts.source === "mod") {
+              const basePath = opts.projectPath || config.projectPath;
+              if (!basePath) return null;
+              const fullPath = validateProjectPath(basePath, filePath);
+              if (!existsSync(fullPath)) return null;
+              return readFileSync(fullPath, "utf-8");
+            } else {
+              const dataPath = join(config.gamePath, "addons", "data");
+              const loosePath = validateProjectPath(dataPath, filePath);
+              if (existsSync(loosePath)) return readFileSync(loosePath, "utf-8");
+              const pakVfs = PakVirtualFS.get(config.gamePath);
+              if (pakVfs && pakVfs.exists(filePath)) return pakVfs.readFile(filePath).toString("utf-8");
+              return null;
+            }
+          } catch {
+            return null;
+          }
+        };
+
+        const agfContent = readFile(opts.agfPath);
+        if (!agfContent) {
+          return { content: [{ type: "text", text: `Could not read AGF file: ${opts.agfPath}` }], isError: true };
+        }
+        const agf = parseAgfToStruct(agfContent);
+        let agr;
+        if (opts.agrPath) {
+          const agrContent = readFile(opts.agrPath);
+          if (agrContent) agr = parseAgrToStruct(agrContent);
+        }
+        const suggestions = generateSuggestions(agf, agr);
+        return { content: [{ type: "text", text: formatSuggestions(suggestions) }] };
+      }
+
+      // Handle setup action
+      if (!opts.vehicleName) {
+        return { content: [{ type: "text", text: "vehicleName is required for setup action." }], isError: true };
+      }
+
       const cfg: VehicleConfig = {
         vehicleName: opts.vehicleName,
         vehicleType: opts.vehicleType,
