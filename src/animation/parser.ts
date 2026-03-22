@@ -1,3 +1,5 @@
+import type { ParsedAgr, ParsedVariable, ParsedCommand, ParsedIkChain, ParsedBoneMask } from "./types.js";
+
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -61,4 +63,46 @@ export function extractStringArray(body: string, propName: string): string[] {
     items.push(m[1]);
   }
   return items;
+}
+
+export function parseAgrToStruct(content: string): ParsedAgr {
+  const varTypes: Array<{ typeName: string; label: "Float" | "Int" | "Bool" }> = [
+    { typeName: "AnimSrcGCTVarFloat", label: "Float" },
+    { typeName: "AnimSrcGCTVarInt", label: "Int" },
+    { typeName: "AnimSrcGCTVarBool", label: "Bool" },
+  ];
+
+  const variables: ParsedVariable[] = [];
+  for (const { typeName, label } of varTypes) {
+    for (const { name, body } of extractBlocks(content, typeName)) {
+      variables.push({
+        name,
+        type: label,
+        min: extractProp(body, "MinValue") ?? extractProp(body, "Min"),
+        max: extractProp(body, "MaxValue") ?? extractProp(body, "Max"),
+        defaultValue: extractProp(body, "DefaultValue") ?? extractProp(body, "Default"),
+      });
+    }
+  }
+
+  const commands: ParsedCommand[] = extractBlocks(content, "AnimSrcGCTCmd").map(b => ({ name: b.name }));
+
+  const ikChains: ParsedIkChain[] = extractBlocks(content, "AnimSrcGCTIkChain").map(({ name, body }) => ({
+    name,
+    joints: extractStringArray(body, "Joints"),
+    middleJoint: extractProp(body, "MiddleJoint"),
+    chainAxis: extractProp(body, "ChainAxis"),
+  }));
+
+  const boneMasks: ParsedBoneMask[] = extractBlocks(content, "AnimSrcGCTBoneMask").map(({ name, body }) => ({
+    name,
+    bones: extractStringArray(body, "BoneNames"),
+  }));
+
+  const globalTags = extractStringArray(content, "GlobalTags");
+  const defaultRunNode = extractProp(content, "DefaultRunNode");
+  const agfReferences = extractStringArray(content, "GraphFilesResourceNames");
+  const astReference = extractProp(content, "AnimSetTemplate");
+
+  return { variables, commands, ikChains, boneMasks, globalTags, defaultRunNode, agfReferences, astReference };
 }
