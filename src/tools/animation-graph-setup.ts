@@ -704,7 +704,7 @@ export function registerAnimationGraphSetup(server: McpServer, config: Config): 
           .array(z.enum(["driver", "gunner", "commander", "passenger"]))
           .default(["driver"]),
         dialList: z.array(z.string()).default([]),
-        outputPath: z.string().describe("Destination folder within mod project."),
+        outputPath: z.string().optional().describe("Destination folder within mod project. Required for setup action."),
         modName: z.string().optional(),
         projectPath: z.string().optional(),
         step: z
