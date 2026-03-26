@@ -12,6 +12,7 @@ export type PrefabType =
 
 export interface ComponentDef {
   type: string;
+  /** Raw 16-character uppercase hex GUID (without braces). Generated if omitted. */
   guid?: string;
   properties?: Record<string, string>;
 }
