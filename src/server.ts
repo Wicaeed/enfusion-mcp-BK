@@ -3,14 +3,10 @@ import { registerApiSearch } from "./tools/api-search.js";
 import { registerComponentSearch } from "./tools/component-search.js";
 import { registerWikiSearch } from "./tools/wiki-search.js";
 import { registerWikiRead } from "./tools/wiki-read.js";
-import { registerProjectBrowse } from "./tools/project-browse.js";
-import { registerProjectRead } from "./tools/project-read.js";
-import { registerProjectWrite } from "./tools/project-write.js";
-import { registerModCreate } from "./tools/mod-create.js";
+import { registerProject } from "./tools/project.js";
 import { registerScriptCreate } from "./tools/script-create.js";
-import { registerPrefabCreate } from "./tools/prefab-create.js";
-import { registerModValidate } from "./tools/mod-validate.js";
-import { registerModBuild } from "./tools/mod-build.js";
+import { registerPrefab } from "./tools/prefab.js";
+import { registerMod } from "./tools/mod.js";
 import { registerConfigCreate } from "./tools/config-create.js";
 import { registerServerConfig } from "./tools/server-config.js";
 import { registerLayoutCreate } from "./tools/layout-create.js";
@@ -24,6 +20,7 @@ import { PatternLibrary } from "./patterns/loader.js";
 import { WorkbenchClient } from "./workbench/client.js";
 import { registerWbLaunch } from "./tools/wb-launch.js";
 import { registerWbConnect } from "./tools/wb-connect.js";
+import { registerWbDiagnose } from "./tools/wb-diagnose.js";
 import { registerWbReload } from "./tools/wb-reload.js";
 import { registerWbEditorTools } from "./tools/wb-editor.js";
 import { registerWbExecuteAction } from "./tools/wb-execute-action.js";
@@ -41,16 +38,13 @@ import { registerWbValidate } from "./tools/wb-validate.js";
 import { registerWbState } from "./tools/wb-state.js";
 import { registerGameBrowse } from "./tools/game-browse.js";
 import { registerGameRead } from "./tools/game-read.js";
-import { registerPrefabInspect } from "./tools/prefab-inspect.js";
 import { registerAssetSearch } from "./tools/asset-search.js";
 import { registerGameDuplicate } from "./tools/game-duplicate.js";
 import { registerWbEntityDuplicate } from "./tools/wb-entity-duplicate.js";
 import { registerWorkshopInfo } from "./tools/workshop-info.js";
 import { registerScenarioTools } from "./tools/wb-scenario.js";
 import { registerScenarioCreate } from "./tools/scenario-create.js";
-import { registerAnimationGraphInspect } from "./tools/animation-graph-inspect.js";
-import { registerAnimationGraphAuthor } from "./tools/animation-graph-author.js";
-import { registerAnimationGraphSetup } from "./tools/animation-graph-setup.js";
+import { registerAnimationGraph } from "./tools/animation-graph.js";
 import { registerWbKnowledge } from "./tools/wb-knowledge.js";
 import type { Config } from "./config.js";
 
@@ -63,18 +57,12 @@ export function registerTools(server: McpServer, config: Config): void {
   registerComponentSearch(server, searchEngine);
   registerWikiSearch(server, searchEngine);
   registerWikiRead(server, searchEngine);
-  registerProjectBrowse(server, config);
+  registerProject(server, config);
 
   // Phase 1 tools
-  registerProjectRead(server, config);
-  registerModCreate(server, config, patterns);
+  registerMod(server, config, searchEngine, patterns);
   registerScriptCreate(server, config, searchEngine);
-  registerPrefabCreate(server, config);
-
-  // Phase 2 tools
-  registerProjectWrite(server, config);
-  registerModValidate(server, config, searchEngine);
-  registerModBuild(server, config);
+  registerPrefab(server, config);
 
   // Phase 3 tools
   registerConfigCreate(server, config);
@@ -89,6 +77,7 @@ export function registerTools(server: McpServer, config: Config): void {
   );
   registerWbLaunch(server, config, wbClient);
   registerWbConnect(server, wbClient);
+  registerWbDiagnose(server, wbClient);
   registerWbReload(server, wbClient);
   registerWbEditorTools(server, wbClient);
   registerWbExecuteAction(server, wbClient);
@@ -110,14 +99,11 @@ export function registerTools(server: McpServer, config: Config): void {
   // Base game access tools
   registerGameBrowse(server, config);
   registerGameRead(server, config);
-  registerPrefabInspect(server, config);
   registerAssetSearch(server, config);
   registerGameDuplicate(server, config, wbClient);
   registerWbEntityDuplicate(server, config, wbClient);
   registerWorkshopInfo(server, config);
-  registerAnimationGraphInspect(server, config);
-  registerAnimationGraphAuthor(server, config);
-  registerAnimationGraphSetup(server, config);
+  registerAnimationGraph(server, config);
   registerWbKnowledge(server);
 
   // MCP Prompts
