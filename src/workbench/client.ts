@@ -112,7 +112,7 @@ export class WorkbenchClient {
             this.extractMode(result);
             return result;
           }
-          if (err.code === "API_ERROR" && err.message.includes("not existing")) {
+          if (err.code === "API_ERROR" && err.message.includes("Undefined API func")) {
             // Workbench is running but our custom handler scripts aren't compiled.
             // This happens when the user opened Workbench manually, or when handlers
             // were cleaned up but Workbench kept running.
@@ -227,9 +227,13 @@ export class WorkbenchClient {
   private extractMode(result: unknown): void {
     if (result && typeof result === "object" && "mode" in result) {
       const mode = (result as Record<string, unknown>).mode;
-      if (mode === "edit" || mode === "play") {
-        this._state.mode = mode;
+      if (mode === "edit") {
+        this._state.mode = "edit";
+      } else if (mode === "play" || mode === "game") {
+        // Scripts return "game" when in play mode (WorldEditorAPI unavailable)
+        this._state.mode = "play";
       }
+      // "no_world_editor" and unrecognised values leave mode as-is (stays "unknown")
     }
   }
 
@@ -351,19 +355,44 @@ export class WorkbenchClient {
     });
     proc.unref();
 
-    // 5. Wait for NET API
+    // 5. Wait for NET API — track the last error type so the timeout message is actionable
     const deadline = Date.now() + LAUNCH_TIMEOUT_MS;
+    let lastErrorCode: WorkbenchError["code"] | undefined;
     while (Date.now() < deadline) {
-      if (await this.ping()) {
+      try {
+        await this.rawCall("EMCP_WB_Ping", {}, { timeout: 3000, skipAutoLaunch: true });
+        this._state.connected = true;
+        this._state.lastUpdated = Date.now();
         logger.info("Workbench NET API is responding.");
         return;
+      } catch (err) {
+        if (err instanceof WorkbenchError) {
+          lastErrorCode = err.code;
+          logger.debug(`Workbench poll (${err.code}): ${err.message}`);
+        }
       }
       await new Promise((r) => setTimeout(r, LAUNCH_POLL_INTERVAL_MS));
     }
 
+    // Build a specific diagnostic based on what was failing at timeout.
+    // CONNECTION_REFUSED = NET API port never opened → NET API likely disabled.
+    // API_ERROR = NET API is up but EMCP_WB_Ping isn't registered → handler scripts
+    //             didn't compile (project has script errors, or wrong mod directory).
+    let hint: string;
+    if (lastErrorCode === "API_ERROR") {
+      hint =
+        `Workbench NET API responded but handler scripts did not load. ` +
+        `Check for script compilation errors in Workbench (Script Editor). ` +
+        `Fix any errors in the project's scripts so the EnfusionMCP handlers can compile, ` +
+        `then try again.`;
+    } else {
+      hint =
+        `NET API port never responded. Ensure NET API is enabled in Workbench: ` +
+        `File > Options > General > Net API (checkbox must be on).`;
+    }
+
     throw new WorkbenchError(
-      `Workbench launched but NET API did not respond within ${LAUNCH_TIMEOUT_MS / 1000}s. ` +
-        `Ensure NET API is enabled: File > Options > General > Net API.`,
+      `Workbench launched but did not connect within ${LAUNCH_TIMEOUT_MS / 1000}s.\n\n${hint}`,
       "LAUNCH_FAILED"
     );
   }
