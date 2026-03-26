@@ -5,9 +5,18 @@ import { dirname, join, extname } from "node:path";
 import type { Config } from "../config.js";
 import { validateProjectPath } from "../utils/safe-path.js";
 import { PakVirtualFS } from "../pak/vfs.js";
-import { parseAgrToStruct, parseAgfToStruct } from "../animation/parser.js";
+import {
+  parseAgrToStruct, parseAgfToStruct, parseAstToStruct,
+  parseAsiToStruct, parseAwToStruct,
+} from "../animation/parser.js";
+import {
+  formatAgrSummary, formatAgfTree, formatAstSummary,
+  formatAsiSummary, formatAwSummary, formatValidationReport,
+} from "../animation/formatter.js";
 import { generateSuggestions, formatSuggestions } from "../animation/suggestions.js";
 import { generateGuide } from "../animation/guides.js";
+
+// ── Shared interface ──────────────────────────────────────────────────────────
 
 interface VehicleConfig {
   vehicleName: string;
@@ -21,9 +30,9 @@ interface VehicleConfig {
   dialList: string[];
 }
 
-// ── File generators (self-contained copy — do not import from animation-graph-author) ──
+// ── Author helpers (from animation-graph-author.ts) ───────────────────────────
 
-function generateAgr(cfg: VehicleConfig): string {
+function generateAgrAuthor(cfg: VehicleConfig): string {
   const lines: string[] = [];
 
   lines.push("AnimSrcGraph {");
@@ -32,8 +41,10 @@ function generateAgr(cfg: VehicleConfig): string {
   );
   lines.push(` ControlTemplate AnimSrcGCT "{PLACEHOLDER_GUID_2}" {`);
 
+  // Variables
   lines.push(`  Variables {`);
 
+  // Standard vehicle variables — order follows LAV25 pattern
   lines.push(`   AnimSrcGCTVarFloat VehicleSteering {`);
   lines.push(`    MinValue -1`);
   lines.push(`    MaxValue 1`);
@@ -109,6 +120,7 @@ function generateAgr(cfg: VehicleConfig): string {
   lines.push(`    MaxValue 100`);
   lines.push(`   }`);
 
+  // Suspension variables (always included, count matches wheelCount)
   for (let i = 0; i < cfg.wheelCount; i++) {
     lines.push(`   AnimSrcGCTVarFloat suspension_${i} {`);
     lines.push(`    MinValue -1`);
@@ -130,6 +142,7 @@ function generateAgr(cfg: VehicleConfig): string {
   lines.push(`    MaxValue 360`);
   lines.push(`   }`);
 
+  // Wheel rotation variables
   for (let i = 0; i < cfg.wheelCount; i++) {
     lines.push(`   AnimSrcGCTVarFloat wheel_${i} {`);
     lines.push(`    MinValue -360`);
@@ -221,6 +234,7 @@ function generateAgr(cfg: VehicleConfig): string {
 
   lines.push(`  }`);
 
+  // Commands
   lines.push(`  Commands {`);
   lines.push(`   AnimSrcGCTCmd CMD_Vehicle_SwitchSeat {`);
   lines.push(`   }`);
@@ -254,8 +268,10 @@ function generateAgr(cfg: VehicleConfig): string {
   lines.push(`   }`);
   lines.push(`  }`);
 
+  // IK Chains
   lines.push(`  IkChains {`);
 
+  // Standard character limb chains
   lines.push(`   AnimSrcGCTIkChain LeftLeg {`);
   lines.push(`    Joints {`);
   lines.push(`     "leftleg"`);
@@ -304,6 +320,7 @@ function generateAgr(cfg: VehicleConfig): string {
   lines.push(`    ChainAxis "-y"`);
   lines.push(`   }`);
 
+  // Suspension IK chains
   if (cfg.hasSuspensionIK) {
     for (let i = 0; i < cfg.wheelCount; i++) {
       lines.push(`   AnimSrcGCTIkChain suspension${i} {`);
@@ -314,6 +331,7 @@ function generateAgr(cfg: VehicleConfig): string {
     }
   }
 
+  // Shock absorber chains — rear wheels (indices >= wheelCount/2)
   if (cfg.hasShockAbsorbers) {
     const rearStart = Math.floor(cfg.wheelCount / 2);
     for (let i = rearStart; i < cfg.wheelCount; i++) {
@@ -330,6 +348,7 @@ function generateAgr(cfg: VehicleConfig): string {
     }
   }
 
+  // Steering linkage chains — front wheels (first half)
   if (cfg.hasSteeringLinkage) {
     const frontCount = Math.floor(cfg.wheelCount / 2);
     for (let i = 0; i < frontCount; i++) {
@@ -348,11 +367,14 @@ function generateAgr(cfg: VehicleConfig): string {
 
   lines.push(`  }`);
 
+  // Bone Masks
   lines.push(`  BoneMasks {`);
 
+  // Chassis mask — wheel bones + suspension bones
   lines.push(`   AnimSrcGCTBoneMask Chassis {`);
   lines.push(`    Bones {`);
 
+  // Generate wheel bones: L01, R01, L02, R02, etc. (pairs per axle)
   const axleCount = cfg.wheelCount / 2;
   for (let axle = 1; axle <= axleCount; axle++) {
     const axleStr = String(axle).padStart(2, "0");
@@ -360,6 +382,7 @@ function generateAgr(cfg: VehicleConfig): string {
     lines.push(`     "v_wheel_R${axleStr}"`);
   }
 
+  // Suspension bones if IK enabled
   if (cfg.hasSuspensionIK) {
     for (let i = 0; i < cfg.wheelCount; i++) {
       lines.push(`     "v_suspension${i}"`);
@@ -369,11 +392,13 @@ function generateAgr(cfg: VehicleConfig): string {
   lines.push(`    }`);
   lines.push(`   }`);
 
+  // Body mask — empty, user fills in
   lines.push(`   AnimSrcGCTBoneMask Body {`);
   lines.push(`    Bones {`);
   lines.push(`    }`);
   lines.push(`   }`);
 
+  // Turret masks
   if (cfg.hasTurret) {
     lines.push(`   AnimSrcGCTBoneMask Turret {`);
     lines.push(`    Bones {`);
@@ -390,6 +415,7 @@ function generateAgr(cfg: VehicleConfig): string {
 
   lines.push(`  }`);
 
+  // Global Tags
   lines.push(`  GlobalTags {`);
   lines.push(`   "VEHICLE"`);
   lines.push(`   "WHEELED"`);
@@ -407,7 +433,7 @@ function generateAgr(cfg: VehicleConfig): string {
   return lines.join("\n");
 }
 
-function generateAst(cfg: VehicleConfig): string {
+function generateAstAuthor(cfg: VehicleConfig): string {
   const seatGroupMap: Record<string, string> = {
     driver: "Driver",
     gunner: "Gunner",
@@ -449,7 +475,39 @@ function generateAst(cfg: VehicleConfig): string {
   return lines.join("\n");
 }
 
-// ── Instruction generators ────────────────────────────────────────────────────
+// ── Inspect helper (from animation-graph-inspect.ts) ─────────────────────────
+
+function readFileForTool(
+  filePath: string,
+  source: "mod" | "game",
+  projectPath: string | undefined,
+  config: Config,
+): string | null {
+  try {
+    if (source === "mod") {
+      const basePath = projectPath || config.projectPath;
+      if (!basePath) return null;
+      const fullPath = validateProjectPath(basePath, filePath);
+      if (!existsSync(fullPath)) return null;
+      return readFileSync(fullPath, "utf-8");
+    } else {
+      const dataPath = join(config.gamePath, "addons", "data");
+      const loosePath = validateProjectPath(dataPath, filePath);
+      if (existsSync(loosePath)) {
+        return readFileSync(loosePath, "utf-8");
+      }
+      const pakVfs = PakVirtualFS.get(config.gamePath);
+      if (pakVfs && pakVfs.exists(filePath)) {
+        return pakVfs.readFile(filePath).toString("utf-8");
+      }
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+// ── Instruction generators (from animation-graph-setup.ts) ───────────────────
 
 function generateAgfInstructions(cfg: VehicleConfig): string {
   const parts: string[] = [];
@@ -677,162 +735,345 @@ function generateChecklist(cfg: VehicleConfig): string {
   return parts.join("\n");
 }
 
-// ── Tool registration ─────────────────────────────────────────────────────────
+// ── Merged tool registration ──────────────────────────────────────────────────
 
-export function registerAnimationGraphSetup(server: McpServer, config: Config): void {
+export function registerAnimationGraph(server: McpServer, config: Config): void {
   server.registerTool(
-    "animation_graph_setup",
+    "animation_graph",
     {
       description:
-        "Full guided workflow wizard for setting up animation graphs in Arma Reforger. " +
-        "Actions: setup (default) generates .agr/.ast scaffold for vehicles; " +
-        "suggest analyzes an existing graph and recommends improvements; " +
-        "guide provides best-practice guidance for character/weapon/prop/custom animation. " +
-        "PRIMARY entry point for: 'set up vehicle animation', 'create animation graph', " +
-        "'suggest improvements to animation graph', 'guide for character/weapon animation'.",
+        "Unified animation graph tool for Arma Reforger vehicles. " +
+        "action=author: Generate and write .agr and .ast scaffold files for a new vehicle. " +
+        "action=inspect: Read and summarize an animation graph file (.agr, .agf, .ast, .asi, or .aw); use sub-action='validate' for pitfall checks. " +
+        "action=setup: Full guided workflow wizard — generates scaffold, AGF node graph instructions, prefab setup, and verification checklist. " +
+        "Trigger: 'create animation graph for new vehicle', 'generate AGR', 'inspect animation graph', " +
+        "'set up vehicle animation', 'suggest improvements to animation graph', 'guide for animation'.",
       inputSchema: {
-        action: z.enum(["setup", "suggest", "guide"]).default("setup")
-          .describe("Action: setup generates vehicle scaffold; suggest analyzes existing graph; guide provides best-practice guidance"),
-        vehicleName: z.string().optional().describe("Vehicle name (e.g. 'MyTruck'). Required for setup action."),
-        vehicleType: z.enum(["wheeled", "tracked", "helicopter", "boat"]).default("wheeled"),
-        wheelCount: z.number().int().min(2).max(8).refine(n => n % 2 === 0, "Must be even (2/4/6/8)").default(4),
-        hasTurret: z.boolean().default(false),
-        hasSuspensionIK: z.boolean().default(true),
-        hasShockAbsorbers: z.boolean().default(false),
-        hasSteeringLinkage: z.boolean().default(false),
-        seatTypes: z
-          .array(z.enum(["driver", "gunner", "commander", "passenger"]))
-          .default(["driver"]),
-        dialList: z.array(z.string()).default([]),
-        outputPath: z.string().optional().describe("Destination folder within mod project. Required for setup action."),
-        modName: z.string().optional(),
-        projectPath: z.string().optional(),
+        action: z.enum(["author", "inspect", "setup"])
+          .describe("Action to perform: author (generate .agr/.ast files), inspect (read/summarize/validate animation files), setup (full guided workflow wizard)."),
+
+        // ── author params ──
+        vehicleName: z.string().optional().describe("(author/setup) Vehicle name (e.g. 'MyTruck'). Used in file names and GlobalTags."),
+        vehicleType: z.enum(["wheeled", "tracked", "helicopter", "boat"]).default("wheeled").describe("(author/setup) Vehicle type."),
+        wheelCount: z.number().int().min(2).max(8).refine(n => n % 2 === 0, "Must be even (2/4/6/8)").default(4).describe("(author/setup) Number of wheels (2/4/6/8). Must be even."),
+        hasTurret: z.boolean().default(false).describe("(author/setup) Add turret variables and bone mask."),
+        hasSuspensionIK: z.boolean().default(true).describe("(author/setup) Add suspension IK chains."),
+        hasShockAbsorbers: z.boolean().default(false).describe("(author/setup) Add shock absorber IK chains."),
+        hasSteeringLinkage: z.boolean().default(false).describe("(author/setup) Add steering axis IK chains."),
+        seatTypes: z.array(z.enum(["driver", "gunner", "commander", "passenger"])).default(["driver"]).describe("(author/setup) Seat types for the vehicle."),
+        dialList: z.array(z.string()).default([]).describe("(author/setup) Variable names to use as dials (e.g. ['Engine_RPM', 'SPEED'])."),
+        outputPath: z.string().optional().describe("(author/setup) Destination folder within mod project (e.g. 'Assets/Vehicles/MyTruck/workspaces')."),
+        modName: z.string().optional().describe("(author/setup) Addon folder name. Uses default if omitted."),
+        projectPath: z.string().optional().describe("(author/inspect/setup) Mod project root. Uses default if omitted."),
+
+        // ── inspect params ──
+        path: z.string().optional().describe(
+          "(inspect) File path to .agr, .agf, .ast, .asi, or .aw. Relative to mod project (source=mod) or game data root (source=game). " +
+          "Example: 'Assets/Vehicles/MyTruck/workspaces/MyTruck.agr'"
+        ),
+        inspectAction: z.enum(["inspect", "validate"]).default("inspect")
+          .describe("(inspect) Sub-action: inspect (default) returns structured summary; validate runs pitfall checks (requires .agf)"),
+        source: z.enum(["mod", "game"]).default("mod")
+          .describe("(inspect/setup) Read from the mod project directory (mod) or base game data (game)."),
+        agrPath: z.string().optional()
+          .describe("(inspect/setup) AGR file path for cross-reference during validate or suggest. Same source/projectPath resolution."),
+        asiPath: z.string().optional()
+          .describe("(inspect) ASI file path for cross-reference during validate."),
+
+        // ── setup params ──
         step: z
           .enum(["all", "agr", "agf_instructions", "prefab_setup", "checklist"])
           .default("all")
-          .describe("Which section to return (setup action only). 'all' returns everything."),
-        agrPath: z.string().optional()
-          .describe("AGR file path for suggest action. Relative to mod project or game data."),
+          .describe("(setup) Which section to return (setup action only). 'all' returns everything."),
         agfPath: z.string().optional()
-          .describe("AGF file path for suggest action. Relative to mod project or game data."),
+          .describe("(setup) AGF file path for suggest sub-action. Relative to mod project or game data."),
         preset: z.enum(["character", "weapon", "prop", "custom"]).optional()
-          .describe("Guide preset (guide action only). Available: character, weapon, prop, custom."),
-        source: z.enum(["mod", "game"]).default("mod")
-          .describe("Read from mod project directory (mod) or base game data (game). Used by suggest action."),
+          .describe("(setup) Guide preset (guide sub-action only). Available: character, weapon, prop, custom."),
+        setupSubAction: z.enum(["setup", "suggest", "guide"]).default("setup")
+          .describe("(setup) Sub-action: setup generates vehicle scaffold; suggest analyzes existing graph; guide provides best-practice guidance."),
       },
     },
     async (opts) => {
-      // Handle guide action
-      if (opts.action === "guide") {
-        const presetName = opts.preset ?? "custom";
-        return { content: [{ type: "text", text: generateGuide(presetName) }] };
-      }
-
-      // Handle suggest action
-      if (opts.action === "suggest") {
-        if (!opts.agfPath) {
-          return { content: [{ type: "text", text: "agfPath is required for suggest action." }], isError: true };
+      // ── author handler ──────────────────────────────────────────────────────
+      if (opts.action === "author") {
+        const basePath = opts.projectPath || config.projectPath;
+        if (!basePath) {
+          return { content: [{ type: "text", text: "No project path configured." }], isError: true };
         }
-        const readFile = (filePath: string): string | null => {
-          try {
-            if (opts.source === "mod") {
-              const basePath = opts.projectPath || config.projectPath;
-              if (!basePath) return null;
-              const fullPath = validateProjectPath(basePath, filePath);
-              if (!existsSync(fullPath)) return null;
-              return readFileSync(fullPath, "utf-8");
-            } else {
-              const dataPath = join(config.gamePath, "addons", "data");
-              const loosePath = validateProjectPath(dataPath, filePath);
-              if (existsSync(loosePath)) return readFileSync(loosePath, "utf-8");
-              const pakVfs = PakVirtualFS.get(config.gamePath);
-              if (pakVfs && pakVfs.exists(filePath)) return pakVfs.readFile(filePath).toString("utf-8");
-              return null;
-            }
-          } catch {
-            return null;
-          }
+
+        if (!opts.vehicleName) {
+          return { content: [{ type: "text", text: "author action requires vehicleName." }], isError: true };
+        }
+
+        const cfg: VehicleConfig = {
+          vehicleName: opts.vehicleName,
+          vehicleType: opts.vehicleType,
+          wheelCount: opts.wheelCount,
+          hasTurret: opts.hasTurret,
+          hasSuspensionIK: opts.hasSuspensionIK,
+          hasShockAbsorbers: opts.hasShockAbsorbers,
+          hasSteeringLinkage: opts.hasSteeringLinkage,
+          seatTypes: opts.seatTypes,
+          dialList: opts.dialList,
         };
 
-        const agfContent = readFile(opts.agfPath);
-        if (!agfContent) {
-          return { content: [{ type: "text", text: `Could not read AGF file: ${opts.agfPath}` }], isError: true };
+        try {
+          const agrContent = generateAgrAuthor(cfg);
+          const astContent = generateAstAuthor(cfg);
+
+          const agrPath = validateProjectPath(basePath, `${opts.outputPath}/${opts.vehicleName}.agr`);
+          const astPath = validateProjectPath(basePath, `${opts.outputPath}/${opts.vehicleName}.ast`);
+
+          mkdirSync(dirname(agrPath), { recursive: true });
+          writeFileSync(agrPath, agrContent, "utf-8");
+          writeFileSync(astPath, astContent, "utf-8");
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: [
+                  `Generated animation graph files for ${opts.vehicleName}:`,
+                  `  AGR: ${opts.outputPath}/${opts.vehicleName}.agr`,
+                  `  AST: ${opts.outputPath}/${opts.vehicleName}.ast`,
+                  ``,
+                  `Next steps:`,
+                  `1. Open Workbench and register both files (right-click -> Add to project)`,
+                  `2. Open the AGR in Animation Editor to verify variables and IK chains`,
+                  `3. Create a new .agf file and build the node graph (use action=setup for guided instructions)`,
+                  `4. Create a .asi file mapping AST animation groups to .anm files`,
+                  `5. Add VehicleAnimationComponent to your vehicle prefab, set AnimGraph + AnimInstance`,
+                ].join("\n"),
+              },
+            ],
+          };
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return { content: [{ type: "text", text: `Error generating animation graph files: ${msg}` }], isError: true };
         }
-        const agf = parseAgfToStruct(agfContent);
-        let agr;
-        if (opts.agrPath) {
-          const agrContent = readFile(opts.agrPath);
-          if (agrContent) agr = parseAgrToStruct(agrContent);
-        }
-        const suggestions = generateSuggestions(agf, agr);
-        return { content: [{ type: "text", text: formatSuggestions(suggestions) }] };
       }
 
-      // Handle setup action
-      if (!opts.vehicleName) {
-        return { content: [{ type: "text", text: "vehicleName is required for setup action." }], isError: true };
-      }
+      // ── inspect handler ─────────────────────────────────────────────────────
+      if (opts.action === "inspect") {
+        const filePath = opts.path;
+        const subAction = opts.inspectAction;
+        const source = opts.source;
+        const projectPath = opts.projectPath;
+        const agrPath = opts.agrPath;
+        const asiPath = opts.asiPath;
 
-      const cfg: VehicleConfig = {
-        vehicleName: opts.vehicleName,
-        vehicleType: opts.vehicleType,
-        wheelCount: opts.wheelCount,
-        hasTurret: opts.hasTurret,
-        hasSuspensionIK: opts.hasSuspensionIK,
-        hasShockAbsorbers: opts.hasShockAbsorbers,
-        hasSteeringLinkage: opts.hasSteeringLinkage,
-        seatTypes: opts.seatTypes,
-        dialList: opts.dialList,
-      };
+        if (!filePath) {
+          return { content: [{ type: "text", text: "path is required for inspect action." }], isError: true };
+        }
 
-      const parts: string[] = [];
+        const ext = extname(filePath).toLowerCase();
+        if (![".agr", ".agf", ".ast", ".asi", ".aw"].includes(ext)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Unsupported file type: ${ext}. Supported: .agr, .agf, .ast, .asi, .aw`,
+              },
+            ],
+          };
+        }
 
-      if (opts.step === "all" || opts.step === "agr") {
-        const basePath = opts.projectPath || config.projectPath;
-        if (basePath) {
-          try {
-            const agrContent = generateAgr(cfg);
-            const astContent = generateAst(cfg);
-            const agrPath = validateProjectPath(
-              basePath,
-              `${opts.outputPath}/${opts.vehicleName}.agr`
-            );
-            const astPath = validateProjectPath(
-              basePath,
-              `${opts.outputPath}/${opts.vehicleName}.ast`
-            );
-            mkdirSync(dirname(agrPath), { recursive: true });
-            writeFileSync(agrPath, agrContent, "utf-8");
-            writeFileSync(astPath, astContent, "utf-8");
-            parts.push(
-              `## Step 1: AGR + AST Files Generated\n- ${opts.outputPath}/${opts.vehicleName}.agr\n- ${opts.outputPath}/${opts.vehicleName}.ast\nRegister both files in Workbench to assign GUIDs.`
-            );
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            parts.push(`## Step 1: AGR + AST — Error\n${msg}`);
+        // Read main file
+        let content: string;
+        try {
+          if (source === "mod") {
+            const basePath = projectPath || config.projectPath;
+            if (!basePath) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: "No project path configured. Set ENFUSION_PROJECT_PATH or provide projectPath.",
+                  },
+                ],
+                isError: true,
+              };
+            }
+            const fullPath = validateProjectPath(basePath, filePath);
+            if (!existsSync(fullPath)) {
+              return {
+                content: [{ type: "text", text: `File not found: ${filePath}` }],
+                isError: true,
+              };
+            }
+            content = readFileSync(fullPath, "utf-8");
+          } else {
+            const dataPath = join(config.gamePath, "addons", "data");
+            const loosePath = validateProjectPath(dataPath, filePath);
+            if (existsSync(loosePath)) {
+              content = readFileSync(loosePath, "utf-8");
+            } else {
+              const pakVfs = PakVirtualFS.get(config.gamePath);
+              if (pakVfs && pakVfs.exists(filePath)) {
+                const buf = pakVfs.readFile(filePath);
+                content = buf.toString("utf-8");
+              } else {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `File not found in game data: ${filePath}`,
+                    },
+                  ],
+                  isError: true,
+                };
+              }
+            }
           }
-        } else {
-          parts.push(
-            `## Step 1: AGR + AST — Skipped\nNo project path configured. Set ENFUSION_PROJECT_PATH or provide projectPath.`
-          );
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return {
+            content: [
+              { type: "text", text: `Error reading file: ${msg}` },
+            ],
+            isError: true,
+          };
         }
+
+        // Handle validate sub-action
+        if (subAction === "validate") {
+          if (ext !== ".agf") {
+            return {
+              content: [{ type: "text", text: "Validate action requires an .agf file as the primary path." }],
+              isError: true,
+            };
+          }
+
+          // Dynamic import to avoid circular deps — validator is implemented in Task 7
+          const { validateGraph } = await import("../animation/validator.js");
+          const agf = parseAgfToStruct(content);
+
+          let agr;
+          if (agrPath) {
+            const agrContent = readFileForTool(agrPath, source, projectPath, config);
+            if (agrContent) agr = parseAgrToStruct(agrContent);
+          }
+
+          let asi;
+          if (asiPath) {
+            const asiContent = readFileForTool(asiPath, source, projectPath, config);
+            if (asiContent) asi = parseAsiToStruct(asiContent);
+          }
+
+          const result = validateGraph(agf, agr, asi, filePath);
+          const report = formatValidationReport(result.issues, result.errorCount, result.warningCount);
+          return { content: [{ type: "text", text: report }] };
+        }
+
+        // Handle inspect sub-action
+        let summary: string;
+        if (ext === ".agr") summary = formatAgrSummary(parseAgrToStruct(content));
+        else if (ext === ".agf") summary = formatAgfTree(parseAgfToStruct(content));
+        else if (ext === ".ast") summary = formatAstSummary(parseAstToStruct(content));
+        else if (ext === ".asi") summary = formatAsiSummary(parseAsiToStruct(content));
+        else summary = formatAwSummary(parseAwToStruct(content));
+
+        return { content: [{ type: "text", text: summary }] };
       }
 
-      if (opts.step === "all" || opts.step === "agf_instructions") {
-        parts.push(generateAgfInstructions(cfg));
+      // ── setup handler ───────────────────────────────────────────────────────
+      if (opts.action === "setup") {
+        const setupSubAction = opts.setupSubAction;
+
+        // Handle guide sub-action
+        if (setupSubAction === "guide") {
+          const presetName = opts.preset ?? "custom";
+          return { content: [{ type: "text", text: generateGuide(presetName) }] };
+        }
+
+        // Handle suggest sub-action
+        if (setupSubAction === "suggest") {
+          if (!opts.agfPath) {
+            return { content: [{ type: "text", text: "agfPath is required for suggest sub-action." }], isError: true };
+          }
+          const agfContent = readFileForTool(opts.agfPath, opts.source, opts.projectPath, config);
+          if (!agfContent) {
+            return { content: [{ type: "text", text: `Could not read AGF file: ${opts.agfPath}` }], isError: true };
+          }
+          const agf = parseAgfToStruct(agfContent);
+          let agr;
+          if (opts.agrPath) {
+            const agrContent = readFileForTool(opts.agrPath, opts.source, opts.projectPath, config);
+            if (agrContent) agr = parseAgrToStruct(agrContent);
+          }
+          const suggestions = generateSuggestions(agf, agr);
+          return { content: [{ type: "text", text: formatSuggestions(suggestions) }] };
+        }
+
+        // Handle setup sub-action
+        if (!opts.vehicleName) {
+          return { content: [{ type: "text", text: "vehicleName is required for setup action." }], isError: true };
+        }
+
+        const cfg: VehicleConfig = {
+          vehicleName: opts.vehicleName,
+          vehicleType: opts.vehicleType,
+          wheelCount: opts.wheelCount,
+          hasTurret: opts.hasTurret,
+          hasSuspensionIK: opts.hasSuspensionIK,
+          hasShockAbsorbers: opts.hasShockAbsorbers,
+          hasSteeringLinkage: opts.hasSteeringLinkage,
+          seatTypes: opts.seatTypes,
+          dialList: opts.dialList,
+        };
+
+        const parts: string[] = [];
+
+        if (opts.step === "all" || opts.step === "agr") {
+          const basePath = opts.projectPath || config.projectPath;
+          if (basePath) {
+            try {
+              const agrContent = generateAgrAuthor(cfg);
+              const astContent = generateAstAuthor(cfg);
+              const agrFilePath = validateProjectPath(
+                basePath,
+                `${opts.outputPath}/${opts.vehicleName}.agr`
+              );
+              const astFilePath = validateProjectPath(
+                basePath,
+                `${opts.outputPath}/${opts.vehicleName}.ast`
+              );
+              mkdirSync(dirname(agrFilePath), { recursive: true });
+              writeFileSync(agrFilePath, agrContent, "utf-8");
+              writeFileSync(astFilePath, astContent, "utf-8");
+              parts.push(
+                `## Step 1: AGR + AST Files Generated\n- ${opts.outputPath}/${opts.vehicleName}.agr\n- ${opts.outputPath}/${opts.vehicleName}.ast\nRegister both files in Workbench to assign GUIDs.`
+              );
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              parts.push(`## Step 1: AGR + AST — Error\n${msg}`);
+            }
+          } else {
+            parts.push(
+              `## Step 1: AGR + AST — Skipped\nNo project path configured. Set ENFUSION_PROJECT_PATH or provide projectPath.`
+            );
+          }
+        }
+
+        if (opts.step === "all" || opts.step === "agf_instructions") {
+          parts.push(generateAgfInstructions(cfg));
+        }
+
+        if (opts.step === "all" || opts.step === "prefab_setup") {
+          parts.push(generatePrefabInstructions(cfg));
+        }
+
+        if (opts.step === "all" || opts.step === "checklist") {
+          parts.push(generateChecklist(cfg));
+        }
+
+        return {
+          content: [{ type: "text", text: parts.join("\n\n---\n\n") }],
+        };
       }
 
-      if (opts.step === "all" || opts.step === "prefab_setup") {
-        parts.push(generatePrefabInstructions(cfg));
-      }
-
-      if (opts.step === "all" || opts.step === "checklist") {
-        parts.push(generateChecklist(cfg));
-      }
-
-      return {
-        content: [{ type: "text", text: parts.join("\n\n---\n\n") }],
-      };
+      // Unreachable — action enum exhausted — but satisfies TypeScript
+      return { content: [{ type: "text", text: "Unknown action." }], isError: true };
     }
   );
 }
