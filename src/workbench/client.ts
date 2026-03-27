@@ -37,6 +37,20 @@ const HANDLER_RECOMPILE_POLL_MS = 2_000;
 
 export type WorkbenchMode = "edit" | "play" | "unknown";
 
+export interface DiagnosticReport {
+  host: string;
+  port: number;
+  workbenchExe: { path: string; exists: boolean } | null;
+  projectPath: { path: string; exists: boolean } | null;
+  defaultMod: string | null;
+  bundledScripts: { path: string; exists: boolean };
+  standaloneAddon: { path: string; exists: boolean; fileCount: number };
+  installedMods: Array<{ modDir: string; handlerDir: string; fileCount: number }>;
+  /** Result of the NET API probe. */
+  netApi: "up_with_handlers" | "up_no_handlers" | "refused" | "timeout" | "error";
+  netApiError?: string;
+}
+
 export interface WorkbenchState {
   connected: boolean;
   mode: WorkbenchMode;
@@ -215,6 +229,126 @@ export class WorkbenchClient {
     }
   }
 
+  /**
+   * Collect a diagnostic snapshot: config, file system, and NET API state.
+   * Does NOT auto-launch Workbench or throw — always returns a report.
+   */
+  async diagnose(): Promise<DiagnosticReport> {
+    // --- Config info ---
+    const host = this.host;
+    const port = this.port;
+    const defaultMod = this.config?.defaultMod ?? null;
+
+    // Workbench exe
+    let workbenchExe: DiagnosticReport["workbenchExe"] = null;
+    if (this.config) {
+      const exePath = this.findWorkbenchExe();
+      const candidate =
+        exePath ??
+        join(this.config.workbenchPath, WORKBENCH_SUBDIR, WORKBENCH_EXE);
+      workbenchExe = { path: candidate, exists: existsSync(candidate) };
+    }
+
+    // Project path
+    let projectPathInfo: DiagnosticReport["projectPath"] = null;
+    if (this.config?.projectPath) {
+      projectPathInfo = {
+        path: this.config.projectPath,
+        exists: existsSync(this.config.projectPath),
+      };
+    }
+
+    // Bundled handler scripts (inside this package)
+    const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const bundledDir = join(packageRoot, "mod", "Scripts", "WorkbenchGame", HANDLER_FOLDER);
+    const bundledScripts = { path: bundledDir, exists: existsSync(bundledDir) };
+
+    // Standalone addon
+    const standaloneBase = this.config?.projectPath
+      ? join(this.config.projectPath, HANDLER_FOLDER)
+      : join("<unknown>", HANDLER_FOLDER);
+    const standaloneScriptsDir = join(standaloneBase, "Scripts", "WorkbenchGame", HANDLER_FOLDER);
+    const standaloneFileCount = existsSync(standaloneScriptsDir)
+      ? readdirSync(standaloneScriptsDir).filter((f) => f.endsWith(".c")).length
+      : 0;
+    const standaloneAddon = {
+      path: standaloneBase,
+      exists: existsSync(standaloneBase),
+      fileCount: standaloneFileCount,
+    };
+
+    // Scan project path for mods that have handler scripts installed
+    const installedMods: DiagnosticReport["installedMods"] = [];
+    if (this.config?.projectPath && existsSync(this.config.projectPath)) {
+      try {
+        for (const entry of readdirSync(this.config.projectPath, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          if (entry.name === HANDLER_FOLDER) continue; // standalone, covered above
+          const handlerDir = join(this.config.projectPath, entry.name, "Scripts", "WorkbenchGame", HANDLER_FOLDER);
+          if (existsSync(handlerDir)) {
+            const fileCount = readdirSync(handlerDir).filter((f) => f.endsWith(".c")).length;
+            installedMods.push({ modDir: join(this.config.projectPath, entry.name), handlerDir, fileCount });
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // --- NET API probe ---
+    let netApi: DiagnosticReport["netApi"] = "refused";
+    let netApiError: string | undefined;
+    try {
+      await this.rawCall("EMCP_WB_Ping", {}, { timeout: 3000, skipAutoLaunch: true });
+      netApi = "up_with_handlers";
+    } catch (err) {
+      if (err instanceof WorkbenchError) {
+        netApiError = err.message;
+        if (err.code === "CONNECTION_REFUSED") {
+          netApi = "refused";
+        } else if (err.code === "TIMEOUT") {
+          netApi = "timeout";
+        } else if (err.code === "API_ERROR" && err.message.includes("not existing Net API function")) {
+          netApi = "up_no_handlers";
+        } else {
+          netApi = "error";
+        }
+      } else {
+        netApi = "error";
+        netApiError = String(err);
+      }
+    }
+
+    return {
+      host,
+      port,
+      workbenchExe,
+      projectPath: projectPathInfo,
+      defaultMod,
+      bundledScripts,
+      standaloneAddon,
+      installedMods,
+      netApi,
+      netApiError,
+    };
+  }
+
+  /**
+   * Remove the standalone EnfusionMCP addon directory if it exists.
+   * This prevents duplicate class name errors when handler scripts are injected
+   * into a user's mod and the standalone folder is also present in the addons dir.
+   */
+  private cleanupStandaloneAddon(): void {
+    const fallbackBase = this.config?.projectPath;
+    if (!fallbackBase) return;
+    const standaloneDir = join(fallbackBase, HANDLER_FOLDER);
+    if (!existsSync(standaloneDir)) return;
+    try {
+      rmSync(standaloneDir, { recursive: true, force: true });
+      logger.info(`Removed leftover standalone addon: ${standaloneDir}`);
+    } catch (e) {
+      logger.warn(`Failed to remove standalone addon: ${e}`);
+    }
+  }
+
   toString(): string {
     return `WorkbenchClient(${this.host}:${this.port})`;
   }
@@ -251,8 +385,14 @@ export class WorkbenchClient {
       throw new WorkbenchError("No config provided — cannot recover handlers.", "LAUNCH_FAILED");
     }
 
-    // Always reinstall to the standalone addon (force overwrite in case outdated)
-    this.installHandlerScripts(undefined, true);
+    // Inject into the currently-open mod (same logic as launchWorkbench).
+    const recoveryGproj = this.findFallbackGproj();
+    if (recoveryGproj) {
+      this.installHandlerScripts(dirname(recoveryGproj), true);
+      this.cleanupStandaloneAddon();
+    } else {
+      this.installHandlerScripts(undefined, true);
+    }
 
     // Wait for Workbench to detect the new files and recompile scripts.
     // Workbench watches its script directories and recompiles automatically.
@@ -296,15 +436,30 @@ export class WorkbenchClient {
       return;
     }
 
-    // 2. Install handler scripts into the standalone EnfusionMCP addon only.
-    //    Workbench loads ALL addons in the project directory simultaneously, so
-    //    injecting handlers into a user's mod causes duplicate class name errors.
-    //    The standalone addon compiles alongside any project the user opens.
-    this.installHandlerScripts();
-
-    // Resolve which .gproj to pass via -gproj (skips the launcher).
-    // Prefer the caller's explicit path; fall back to finding one from the addons dir.
+    // 2. Resolve the target .gproj and inject handler scripts into that mod.
+    //    Handler scripts must compile as part of the opened project — Workbench
+    //    only compiles the active project and its declared dependencies, NOT every
+    //    addon folder in the project directory.  A standalone sibling addon will
+    //    never be compiled unless the user's project explicitly depends on it.
     let resolvedGproj = gprojPath || this.findFallbackGproj();
+    if (resolvedGproj) {
+      this.installHandlerScripts(dirname(resolvedGproj));
+      // Remove any leftover standalone addon to prevent duplicate class errors.
+      // If a previous session created {projectPath}/EnfusionMCP/ it would be
+      // picked up as a sibling addon and cause compile-time class name conflicts.
+      this.cleanupStandaloneAddon();
+    } else {
+      // No project found — fall back to standalone addon as last resort and open it
+      // directly so its handlers at least compile (user's project won't be open).
+      this.installHandlerScripts();
+      const fallbackBase = this.config?.projectPath;
+      if (fallbackBase) {
+        const standaloneGproj = join(fallbackBase, HANDLER_FOLDER, `${HANDLER_FOLDER}.gproj`);
+        if (existsSync(standaloneGproj)) {
+          resolvedGproj = standaloneGproj;
+        }
+      }
+    }
 
     // 3. Find executable
     const exePath = this.findWorkbenchExe();
