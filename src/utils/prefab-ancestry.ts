@@ -203,7 +203,7 @@ export function parseTopLevelComponents(content: string): Map<string, ParsedComp
     if (i >= len) break;
 
     // Try to match a component declaration at this position:  TypeName "{16HEX}"... {
-    const m = /^(\w+)\s+"\{([0-9A-Fa-f]{16})\}"[^\n{]*\{/.exec(block.slice(i));
+    const m = /^(\w+)\s+"\{([0-9A-Fa-f]{16})\}"(?:[^{"\\]|"[^"]*")*\{/.exec(block.slice(i));
     if (m) {
       const typeName = m[1];
       const guid = m[2];
