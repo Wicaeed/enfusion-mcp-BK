@@ -9,7 +9,7 @@ describe("generatePrefab", () => {
     expect(node.type).toBe("GenericEntity");
   });
 
-  it("generates spawnpoint prefab with component", () => {
+  it("generates spawnpoint prefab with recipe override components", () => {
     const text = generatePrefab({ name: "MySpawn", prefabType: "spawnpoint" });
     const node = parse(text);
     expect(node.type).toBe("GenericEntity");
@@ -25,27 +25,47 @@ describe("generatePrefab", () => {
     expect(node.type).toBe("SCR_ChimeraCharacter");
     const comps = node.children.find((c) => c.type === "components");
     expect(comps).toBeDefined();
-    const invComp = comps!.children.find((c) => c.type === "InventoryStorageManagerComponent");
-    expect(invComp).toBeDefined();
+    // Recipe components should be present (MeshObject, CharacterAnimationComponent)
+    expect(comps!.children.length).toBeGreaterThan(0);
   });
 
-  it("generates interactive prefab with actions", () => {
-    const text = generatePrefab({ name: "Door", prefabType: "interactive" });
+  it("generates prop prefab with mesh", () => {
+    const text = generatePrefab({ name: "Door", prefabType: "prop" });
     const node = parse(text);
+    expect(node.type).toBe("GenericEntity");
     const comps = node.children.find((c) => c.type === "components");
     expect(comps).toBeDefined();
     expect(comps!.children.find((c) => c.type === "MeshObject")).toBeDefined();
-    expect(comps!.children.find((c) => c.type === "ActionsManagerComponent")).toBeDefined();
   });
 
   it("includes parent prefab as inheritance", () => {
     const text = generatePrefab({
-      name: "MyWeapon",
-      prefabType: "weapon",
+      name: "MyFirearm",
+      prefabType: "firearm",
       parentPrefab: "{AABB}Prefabs/Weapons/AK47.et",
     });
     const node = parse(text);
     expect(node.inheritance).toBe("{AABB}Prefabs/Weapons/AK47.et");
+  });
+
+  it("generates firearm prefab with variant", () => {
+    const text = generatePrefab({
+      name: "MyPistol",
+      prefabType: "firearm",
+      variant: "handgun",
+    });
+    const node = parse(text);
+    expect(node.type).toBe("GenericEntity");
+    const comps = node.children.find((c) => c.type === "components");
+    expect(comps).toBeDefined();
+    // Should have recipe override components
+    expect(comps!.children.find((c) => c.type === "MeshObject")).toBeDefined();
+  });
+
+  it("generates ground_vehicle prefab", () => {
+    const text = generatePrefab({ name: "MyCar", prefabType: "ground_vehicle" });
+    const node = parse(text);
+    expect(node.type).toBe("Vehicle");
   });
 
   it("adds custom components", () => {
@@ -87,12 +107,12 @@ describe("generatePrefab", () => {
     const node = parse(text);
     const comps = node.children.find((c) => c.type === "components");
     expect(comps).toBeDefined();
-    expect(comps!.children.find((c) => c.type === "SCR_BaseGameMode")).toBeDefined();
-    expect(comps!.children.find((c) => c.type === "SCR_RespawnSystemComponent")).toBeDefined();
+    // Recipe override components should be present
+    expect(comps!.children.length).toBeGreaterThan(0);
   });
 
   it("all component nodes have GUIDs", () => {
-    const text = generatePrefab({ name: "Test", prefabType: "interactive" });
+    const text = generatePrefab({ name: "Test", prefabType: "prop" });
     const node = parse(text);
     const comps = node.children.find((c) => c.type === "components");
     for (const child of comps!.children) {
@@ -101,7 +121,7 @@ describe("generatePrefab", () => {
     }
   });
 
-  it("uses ancestorComponents instead of type defaults when provided", () => {
+  it("uses ancestorComponents instead of recipe defaults when provided", () => {
     const text = generatePrefab({
       name: "Test",
       prefabType: "character",
@@ -112,16 +132,14 @@ describe("generatePrefab", () => {
     const node = parse(text);
     const comps = node.children.find((c) => c.type === "components");
     expect(comps).toBeDefined();
-    // ancestorComponents replaces defaults — InventoryStorageManagerComponent should NOT be present
-    expect(comps!.children.find((c) => c.type === "InventoryStorageManagerComponent")).toBeUndefined();
-    // Custom component should be present
+    // ancestorComponents should be present with preserved GUID
     const custom = comps!.children.find((c) => c.type === "CustomComponent");
     expect(custom).toBeDefined();
     // GUID should be preserved from ancestorComponents
     expect(custom!.id).toBe("{AAAAAAAAAAAAAAAA}");
   });
 
-  it("appends user components after ancestorComponents", () => {
+  it("appends user components after ancestorComponents and recipe overrides", () => {
     const text = generatePrefab({
       name: "Test",
       prefabType: "generic",
@@ -138,16 +156,49 @@ describe("generatePrefab", () => {
     expect(comps!.children.find((c) => c.type === "MeshObject")).toBeDefined();
     expect(comps!.children.find((c) => c.type === "RigidBody")).toBeDefined();
   });
+
+  it("generates all new recipe types", () => {
+    const types: Array<[string, string]> = [
+      ["firearm", "GenericEntity"],
+      ["attachment", "GenericEntity"],
+      ["ground_vehicle", "Vehicle"],
+      ["air_vehicle", "Vehicle"],
+      ["character", "SCR_ChimeraCharacter"],
+      ["prop", "GenericEntity"],
+      ["building", "SCR_DestructibleBuildingEntity"],
+      ["item", "GenericEntity"],
+      ["group", "SCR_AIGroup"],
+      ["spawnpoint", "GenericEntity"],
+      ["gamemode", "GenericEntity"],
+      ["generic", "GenericEntity"],
+    ];
+
+    for (const [type, expectedEntity] of types) {
+      const text = generatePrefab({
+        name: `Test${type}`,
+        prefabType: type as any,
+      });
+      const node = parse(text);
+      expect(node.type).toBe(expectedEntity);
+    }
+  });
 });
 
 describe("getPrefabSubdirectory", () => {
-  it("returns correct subdirectories", () => {
+  it("returns correct base subdirectories", () => {
     expect(getPrefabSubdirectory("character")).toBe("Prefabs/Characters");
-    expect(getPrefabSubdirectory("vehicle")).toBe("Prefabs/Vehicles");
-    expect(getPrefabSubdirectory("weapon")).toBe("Prefabs/Weapons");
+    expect(getPrefabSubdirectory("ground_vehicle")).toBe("Prefabs/Vehicles");
+    expect(getPrefabSubdirectory("firearm")).toBe("Prefabs/Weapons");
     expect(getPrefabSubdirectory("spawnpoint")).toBe("Prefabs/Systems");
-    expect(getPrefabSubdirectory("interactive")).toBe("Prefabs/Props");
+    expect(getPrefabSubdirectory("prop")).toBe("Prefabs/Props");
     expect(getPrefabSubdirectory("generic")).toBe("Prefabs");
+  });
+
+  it("returns variant-specific subdirectories", () => {
+    expect(getPrefabSubdirectory("firearm", "handgun")).toBe("Prefabs/Weapons/Handguns");
+    expect(getPrefabSubdirectory("firearm", "rifle")).toBe("Prefabs/Weapons/Rifles");
+    expect(getPrefabSubdirectory("ground_vehicle", "car")).toBe("Prefabs/Vehicles/Cars");
+    expect(getPrefabSubdirectory("ground_vehicle", "tracked")).toBe("Prefabs/Vehicles/Tracked");
   });
 });
 

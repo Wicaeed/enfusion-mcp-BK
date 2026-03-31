@@ -1,13 +1,19 @@
 import { createNode, serialize, type EnfusionNode } from "../formats/enfusion-text.js";
 import { generateGuid } from "../formats/guid.js";
+import { recipeLoader } from "./recipe-loader.js";
 
 export type PrefabType =
+  | "firearm"
+  | "attachment"
+  | "ground_vehicle"
+  | "air_vehicle"
   | "character"
-  | "vehicle"
-  | "weapon"
+  | "prop"
+  | "building"
+  | "item"
+  | "group"
   | "spawnpoint"
   | "gamemode"
-  | "interactive"
   | "generic";
 
 export interface ComponentDef {
@@ -22,7 +28,9 @@ export interface PrefabOptions {
   name: string;
   /** Prefab template type */
   prefabType: PrefabType;
-  /** Parent prefab path to inherit from (uses default per type if omitted) */
+  /** Optional recipe variant (e.g., "handgun" for firearm type) */
+  variant?: string;
+  /** Parent prefab path to inherit from (uses recipe default if omitted) */
   parentPrefab?: string;
   /** Additional components to add */
   components?: ComponentDef[];
@@ -30,104 +38,44 @@ export interface PrefabOptions {
   description?: string;
   /**
    * Pre-resolved ancestor components (from prefab-ancestry walkChain).
-   * When provided, replaces the hardcoded defaultComponents for this prefab type.
+   * When provided, ancestry components take precedence over recipe overrides.
    * GUIDs are preserved so they act as override slots in the Enfusion delta model.
    */
   ancestorComponents?: ComponentDef[];
 }
 
-interface PrefabTypeConfig {
-  /** Root entity type */
-  entityType: string;
-  /** Default parent prefab reference (empty = no inheritance) */
-  defaultParent: string;
-  /** Subdirectory under Prefabs/ */
-  subdirectory: string;
-  /** Default components */
-  defaultComponents: ComponentDef[];
-}
-
-const PREFAB_CONFIGS: Record<PrefabType, PrefabTypeConfig> = {
-  character: {
-    entityType: "SCR_ChimeraCharacter",
-    defaultParent: "",
-    subdirectory: "Prefabs/Characters",
-    defaultComponents: [
-      { type: "InventoryStorageManagerComponent", properties: {} },
-      { type: "SCR_CharacterControllerComponent", properties: {} },
-    ],
-  },
-  vehicle: {
-    entityType: "Vehicle",
-    defaultParent: "",
-    subdirectory: "Prefabs/Vehicles",
-    defaultComponents: [
-      { type: "VehicleControllerComponent", properties: {} },
-      { type: "MeshObject", properties: {} },
-    ],
-  },
-  weapon: {
-    entityType: "Weapon_Base",
-    defaultParent: "",
-    subdirectory: "Prefabs/Weapons",
-    defaultComponents: [
-      { type: "WeaponComponent", properties: {} },
-      { type: "MeshObject", properties: {} },
-    ],
-  },
-  spawnpoint: {
-    entityType: "GenericEntity",
-    defaultParent: "",
-    subdirectory: "Prefabs/Systems",
-    defaultComponents: [
-      { type: "SCR_SpawnPoint", properties: {} },
-    ],
-  },
-  gamemode: {
-    entityType: "GenericEntity",
-    defaultParent: "",
-    subdirectory: "Prefabs/Systems",
-    defaultComponents: [
-      { type: "SCR_BaseGameMode", properties: {} },
-      { type: "SCR_RespawnSystemComponent", properties: {} },
-    ],
-  },
-  interactive: {
-    entityType: "GenericEntity",
-    defaultParent: "",
-    subdirectory: "Prefabs/Props",
-    defaultComponents: [
-      { type: "MeshObject", properties: { Object: "" } },
-      { type: "RigidBody", properties: { ModelGeometry: "1" } },
-      { type: "ActionsManagerComponent", properties: {} },
-    ],
-  },
-  generic: {
-    entityType: "GenericEntity",
-    defaultParent: "",
-    subdirectory: "Prefabs",
-    defaultComponents: [],
-  },
-};
 
 /**
  * Generate an Enfusion .et prefab file.
+ * Loads recipe from JSON, merges with ancestry and user components.
  */
 export function generatePrefab(opts: PrefabOptions): string {
-  const config = PREFAB_CONFIGS[opts.prefabType];
-  const parentPrefab = opts.parentPrefab || config.defaultParent;
+  const recipe = recipeLoader.getRecipe(opts.prefabType, opts.variant);
+  const parentPrefab = opts.parentPrefab || recipe.defaultParent;
   const entityGuid = generateGuid();
 
-  const root = createNode(config.entityType, {
+  const root = createNode(recipe.entityType, {
     inheritance: parentPrefab || undefined,
     properties: [{ key: "ID", value: entityGuid }],
   });
 
   // Build components block
-  // Use resolved ancestor components if provided, otherwise fall back to type defaults
-  const baseComponents: ComponentDef[] = opts.ancestorComponents ?? config.defaultComponents;
+  // Ancestry components (if provided) take precedence, then recipe overrides, then user components
+  const baseComponents: ComponentDef[] = opts.ancestorComponents ?? [];
+
+  // Convert recipe override components to ComponentDef format
+  const recipeComponents: ComponentDef[] = recipe.overrideComponents.map((override) => ({
+    type: override.type,
+    properties: override.properties ?? {},
+  }));
+
+  // Merge: ancestry (with preserved GUIDs) + recipe overrides + user components
   const allComponents: ComponentDef[] = [
     ...baseComponents,
+    // Only add recipe components not already in ancestry
+    ...recipeComponents.filter(
+      (rc) => !baseComponents.some((ac) => ac.type === rc.type)
+    ),
     ...(opts.components ?? []),
   ];
 
@@ -181,8 +129,9 @@ export function generatePrefab(opts: PrefabOptions): string {
 /**
  * Get the subdirectory for a prefab type.
  */
-export function getPrefabSubdirectory(prefabType: PrefabType): string {
-  return PREFAB_CONFIGS[prefabType].subdirectory;
+export function getPrefabSubdirectory(prefabType: PrefabType, variant?: string): string {
+  const recipe = recipeLoader.getRecipe(prefabType, variant);
+  return recipe.subdirectory;
 }
 
 /**

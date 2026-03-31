@@ -10,6 +10,7 @@ import {
   type PrefabType,
   type ComponentDef,
 } from "../templates/prefab.js";
+import { recipeLoader } from "../templates/recipe-loader.js";
 import {
   walkChain,
   mergeAncestryComponents,
@@ -96,17 +97,29 @@ export function registerPrefab(server: McpServer, config: Config): void {
           .describe("(create) Prefab name (e.g., 'MySpawnPoint', 'CustomVehicle')"),
         prefabType: z
           .enum([
+            "firearm",
+            "attachment",
+            "ground_vehicle",
+            "air_vehicle",
             "character",
-            "vehicle",
-            "weapon",
+            "prop",
+            "building",
+            "item",
+            "group",
             "spawnpoint",
             "gamemode",
-            "interactive",
             "generic",
           ])
           .optional()
           .describe(
             "(create) Prefab template type. Determines the root entity type, default components, and file location."
+          ),
+        variant: z
+          .string()
+          .optional()
+          .describe(
+            "(create) Optional recipe variant (e.g., 'handgun' for firearm, 'rifle', 'launcher', 'machinegun'). " +
+            "Variants specialize the recipe with different base parents and placeholder components."
           ),
         parentPrefab: z
           .string()
@@ -158,7 +171,7 @@ export function registerPrefab(server: McpServer, config: Config): void {
       const { action } = params;
 
       if (action === "create") {
-        const { name, prefabType, parentPrefab, components, description, includeAncestry, projectPath } = params;
+        const { name, prefabType, variant, parentPrefab, components, description, includeAncestry, projectPath } = params;
         const basePath = projectPath || config.projectPath;
 
         try {
@@ -176,6 +189,18 @@ export function registerPrefab(server: McpServer, config: Config): void {
           }
 
           validateFilename(name);
+
+          // Get recipe to extract postCreateNotes
+          let recipe;
+          try {
+            recipe = recipeLoader.getRecipe(prefabType as PrefabType, variant as string | undefined);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return {
+              content: [{ type: "text", text: `Error loading recipe: ${msg}` }],
+              isError: true,
+            };
+          }
 
           // Resolve ancestry if parentPrefab is given and includeAncestry is not disabled
           let ancestorComponents: ComponentDef[] | undefined;
@@ -197,7 +222,7 @@ export function registerPrefab(server: McpServer, config: Config): void {
                 ancestryNote += `\nWarnings: ${warnings.join("; ")}`;
               }
             } else {
-              ancestryNote = `\n\nAncestry resolution unavailable (game files not found). Using template defaults.`;
+              ancestryNote = `\n\nAncestry resolution unavailable (game files not found). Using recipe defaults.`;
               if (warnings.length > 0) {
                 ancestryNote += ` Warnings: ${warnings.join("; ")}`;
               }
@@ -207,14 +232,20 @@ export function registerPrefab(server: McpServer, config: Config): void {
           const content = generatePrefab({
             name,
             prefabType: prefabType as PrefabType,
+            variant: variant as string | undefined,
             parentPrefab,
             components: components as ComponentDef[] | undefined,
             description,
             ancestorComponents,
           });
 
+          // Format post-creation checklist from recipe
+          const checklist = recipe.postCreateNotes.length > 0
+            ? "\n\nRequired follow-up:\n" + recipe.postCreateNotes.map((note) => `[ ] ${note}`).join("\n")
+            : "";
+
           if (basePath) {
-            const subdir = getPrefabSubdirectory(prefabType as PrefabType);
+            const subdir = getPrefabSubdirectory(prefabType as PrefabType, variant as string | undefined);
             const filename = getPrefabFilename(name);
             const targetDir = resolve(basePath, subdir);
             const targetPath = join(targetDir, filename);
@@ -226,7 +257,7 @@ export function registerPrefab(server: McpServer, config: Config): void {
                 content: [
                   {
                     type: "text",
-                    text: `File already exists: ${subdir}/${filename}\n\nGenerated content (not written):\n\n\`\`\`\n${content}\n\`\`\`${ancestryNote}`,
+                    text: `File already exists: ${subdir}/${filename}\n\nGenerated content (not written):\n\n\`\`\`\n${content}\n\`\`\`${checklist}${ancestryNote}`,
                   },
                 ],
               };
@@ -234,15 +265,12 @@ export function registerPrefab(server: McpServer, config: Config): void {
 
             writeFileSync(targetPath, content, "utf-8");
 
-            const meshWarning = (prefabType === "interactive" || prefabType === "generic")
-              ? "\n\nIMPORTANT: The MeshObject 'Object' property is empty. You MUST set it to a base game .xob model path (e.g., '{5F4C4181F065B447}Assets/Props/Military/Barrels/BarrelGreen_01.xob') or the entity will be INVISIBLE in-game. Use project_write to update the prefab."
-              : "";
-
+            const variantTag = variant ? ` (variant: ${variant})` : "";
             return {
               content: [
                 {
                   type: "text",
-                  text: `Prefab created: ${subdir}/${filename}\n\n\`\`\`\n${content}\n\`\`\`${meshWarning}${ancestryNote}`,
+                  text: `Prefab created: ${subdir}/${filename}\nType: ${prefabType}${variantTag}\n\n\`\`\`\n${content}\n\`\`\`${checklist}${ancestryNote}`,
                 },
               ],
             };
@@ -252,7 +280,7 @@ export function registerPrefab(server: McpServer, config: Config): void {
             content: [
               {
                 type: "text",
-                text: `Generated prefab (no project path configured — not written to disk):\n\n\`\`\`\n${content}\n\`\`\`\n\nSet ENFUSION_PROJECT_PATH to write files automatically.${ancestryNote}`,
+                text: `Generated prefab (no project path configured — not written to disk):\n\n\`\`\`\n${content}\n\`\`\`${checklist}\n\nSet ENFUSION_PROJECT_PATH to write files automatically.${ancestryNote}`,
               },
             ],
           };
