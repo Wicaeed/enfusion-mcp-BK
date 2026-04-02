@@ -46,6 +46,7 @@ import { registerScenarioTools } from "./tools/wb-scenario.js";
 import { registerScenarioCreate } from "./tools/scenario-create.js";
 import { registerAnimationGraph } from "./tools/animation-graph.js";
 import { registerWbKnowledge } from "./tools/wb-knowledge.js";
+import { registerBuildingSetup } from "./tools/building-setup.js";
 import type { Config } from "./config.js";
 
 export function registerTools(server: McpServer, config: Config): void {
@@ -105,6 +106,7 @@ export function registerTools(server: McpServer, config: Config): void {
   registerWorkshopInfo(server, config);
   registerAnimationGraph(server, config);
   registerWbKnowledge(server);
+  registerBuildingSetup(server, config);
 
   // MCP Prompts
   registerCreateModPrompt(server, patterns);
