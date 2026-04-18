@@ -13,7 +13,7 @@ const ENV_KEYS = [
   "ENFUSION_WORKBENCH_HOST",
   "ENFUSION_WORKBENCH_PORT",
   "ENFUSION_DEFAULT_MOD",
-  "ENFUSION_MOD_PATHS",
+  "REFORGER_MOD_PATHS",
   "HOME",
   "USERPROFILE",
 ];
@@ -65,14 +65,14 @@ describe("loadConfig — modPaths", () => {
     }
   });
 
-  it("ENFUSION_MOD_PATHS env var overrides discovery (semicolon + comma separators)", () => {
-    process.env.ENFUSION_MOD_PATHS = "/a/one,/b/two;/c/three";
+  it("REFORGER_MOD_PATHS env var overrides discovery (semicolon + comma separators)", () => {
+    process.env.REFORGER_MOD_PATHS = "/a/one,/b/two;/c/three";
     const cfg = loadConfig();
     expect(cfg.modPaths).toEqual(["/a/one", "/b/two", "/c/three"]);
   });
 
-  it("trims whitespace and ignores empty entries in ENFUSION_MOD_PATHS", () => {
-    process.env.ENFUSION_MOD_PATHS = " /a , , /b ";
+  it("trims whitespace and ignores empty entries in REFORGER_MOD_PATHS", () => {
+    process.env.REFORGER_MOD_PATHS = " /a , , /b ";
     const cfg = loadConfig();
     expect(cfg.modPaths).toEqual(["/a", "/b"]);
   });

@@ -182,9 +182,9 @@ Config can also be loaded from `~/.enfusion-mcp/config.json`. Environment variab
 - `~/Documents/My Games/ArmaReforgerWorkbench/addons` — Workbench workshop cache
 
 **Explicit override:** Set via either
-- Env var `ENFUSION_MOD_PATHS` (comma- or semicolon-separated):
+- Env var `REFORGER_MOD_PATHS` (comma- or semicolon-separated):
   ```bash
-  ENFUSION_MOD_PATHS="/path/to/mods1,/path/to/mods2"
+  REFORGER_MOD_PATHS="/path/to/mods1,/path/to/mods2"
   ```
 - JSON config `modPaths` array (see `enfusion-mcp.config.example.json`).
 
