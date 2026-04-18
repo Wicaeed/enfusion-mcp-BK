@@ -173,6 +173,23 @@ All optional. Sensible defaults are used when nothing is set.
 
 Config can also be loaded from `~/.enfusion-mcp/config.json`. Environment variables take priority.
 
+### Third-party mod support
+
+`enfusion-mcp` can browse, read, and search `.pak` files from installed workshop mods in addition to the base game. Mod paks are layered on top of the base game — base game paks take precedence on any path collisions.
+
+**Automatic discovery (default):** On startup, `enfusion-mcp` probes these paths and uses whichever exist:
+- `~/Documents/My Games/ArmaReforger/addons` — game client's workshop cache
+- `~/Documents/My Games/ArmaReforgerWorkbench/addons` — Workbench workshop cache
+
+**Explicit override:** Set via either
+- Env var `ENFUSION_MOD_PATHS` (comma- or semicolon-separated):
+  ```bash
+  ENFUSION_MOD_PATHS="/path/to/mods1,/path/to/mods2"
+  ```
+- JSON config `modPaths` array (see `enfusion-mcp.config.example.json`).
+
+Explicit config overrides discovery. The resolved list is logged at startup.
+
 ## Requirements
 
 - **Node.js 20+**

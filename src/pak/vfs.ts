@@ -22,15 +22,18 @@ interface FileRef {
 // ── PakVirtualFS ─────────────────────────────────────────────────────────────
 
 /**
- * Virtual filesystem that merges all .pak files in the game's addons/ directory
- * into a single unified file tree. Supports directory listing, file existence
- * checks, and on-demand file reading with automatic zlib decompression.
+ * Virtual filesystem that merges all .pak files from the base game's addons/
+ * directory and any additional mod-pak roots into a single unified file tree.
+ * Supports directory listing, file existence checks, and on-demand file reading
+ * with automatic zlib decompression.
  *
- * Instantiated lazily as a singleton and cached for the session lifetime.
+ * Instantiated lazily as a singleton keyed on (gamePath, modPaths) and cached
+ * for the session lifetime. On duplicate virtual paths, first pak in scan order
+ * wins (base game before mod roots).
  */
 export class PakVirtualFS {
   private static instance: PakVirtualFS | null = null;
-  private static instanceGamePath: string | null = null;
+  private static instanceKey: string | null = null;
 
   /** Flat lookup: normalized virtual path → file reference */
   private fileIndex = new Map<string, FileRef>();
@@ -40,53 +43,33 @@ export class PakVirtualFS {
   /** Clear the cached VFS instance, forcing a fresh rebuild on next get(). */
   static invalidate(): void {
     PakVirtualFS.instance = null;
-    PakVirtualFS.instanceGamePath = null;
+    PakVirtualFS.instanceKey = null;
   }
 
   /**
-   * Get or create the singleton VFS for the given game path.
-   * Returns null if no .pak files are found.
+   * Get or create the singleton VFS for the given game path + optional mod paths.
+   * Base game addons are scanned first; mod roots are scanned in provided order.
+   * Precedence on duplicate virtual paths: first pak in scan order wins
+   * (so base game takes precedence on collisions).
+   * Returns null if no .pak files are found anywhere.
    */
-  static get(gamePath: string): PakVirtualFS | null {
-    if (PakVirtualFS.instance && PakVirtualFS.instanceGamePath === gamePath) {
+  static get(gamePath: string, modPaths: string[] = []): PakVirtualFS | null {
+    const key = JSON.stringify([gamePath, ...modPaths]);
+    if (PakVirtualFS.instance && PakVirtualFS.instanceKey === key) {
       return PakVirtualFS.instance;
     }
 
-    const addonsPath = join(gamePath, "addons");
-    if (!existsSync(addonsPath)) return null;
-
-    let pakFiles: string[];
-    try {
-      // Scan addons/ directly, then one level deep (e.g. addons/data/, addons/core/)
-      const topEntries = readdirSync(addonsPath, { withFileTypes: true });
-      pakFiles = topEntries
-        .filter((e) => e.isFile() && extname(e.name).toLowerCase() === ".pak")
-        .map((e) => join(addonsPath, e.name));
-
-      for (const entry of topEntries) {
-        if (!entry.isDirectory()) continue;
-        try {
-          const subEntries = readdirSync(join(addonsPath, entry.name), { withFileTypes: true });
-          for (const sub of subEntries) {
-            if (sub.isFile() && extname(sub.name).toLowerCase() === ".pak") {
-              pakFiles.push(join(addonsPath, entry.name, sub.name));
-            }
-          }
-        } catch {
-          // Skip unreadable subdirectories
-        }
-      }
-
-      pakFiles.sort(); // deterministic order — first pak alphabetically wins on duplicates
-    } catch {
-      return null;
-    }
+    const baseAddons = join(gamePath, "addons");
+    const pakFiles = [
+      ...scanPakRoot(baseAddons),
+      ...modPaths.flatMap((p) => scanPakRoot(p)),
+    ];
 
     if (pakFiles.length === 0) return null;
 
     const vfs = new PakVirtualFS(pakFiles);
     PakVirtualFS.instance = vfs;
-    PakVirtualFS.instanceGamePath = gamePath;
+    PakVirtualFS.instanceKey = key;
     return vfs;
   }
 
@@ -266,4 +249,36 @@ function normalizePath(p: string): string {
     .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "")
     .replace(/\/+/g, "/");
+}
+
+/** Scan a directory for .pak files (top level plus one level deep).
+ *  Returns sorted absolute paths; empty array if the directory does not exist. */
+function scanPakRoot(addonsPath: string): string[] {
+  if (!existsSync(addonsPath)) return [];
+  const found: string[] = [];
+  try {
+    const topEntries = readdirSync(addonsPath, { withFileTypes: true });
+    for (const e of topEntries) {
+      if (e.isFile() && extname(e.name).toLowerCase() === ".pak") {
+        found.push(join(addonsPath, e.name));
+      }
+    }
+    for (const entry of topEntries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const subEntries = readdirSync(join(addonsPath, entry.name), { withFileTypes: true });
+        for (const sub of subEntries) {
+          if (sub.isFile() && extname(sub.name).toLowerCase() === ".pak") {
+            found.push(join(addonsPath, entry.name, sub.name));
+          }
+        }
+      } catch {
+        // Skip unreadable subdirectories
+      }
+    }
+  } catch {
+    return [];
+  }
+  found.sort();
+  return found;
 }

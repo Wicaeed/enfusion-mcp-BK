@@ -30,7 +30,7 @@ const TYPE_FILTER: Record<string, string[]> = {
 
 /** Cached file index — built once per session */
 let cachedIndex: AssetEntry[] | null = null;
-let cachedBasePath: string | null = null;
+let cachedKey: string | null = null;
 let cachedGuidDiag = "";
 
 /**
@@ -82,7 +82,47 @@ function buildGuidIndex(basePath: string): { guidMap: Map<string, string>; diag:
   return { guidMap, diag };
 }
 
-function buildIndex(basePath: string, gamePath: string): AssetEntry[] {
+/** Walk VFS for entity-catalog .conf files and extract {GUID}path.et pairs.
+ *  Workshop mods pack their entity catalogs inside .pak files, so the loose-file
+ *  walker in buildGuidIndex misses them. This complements it by reading the VFS. */
+export function extractGuidsFromPakCatalogs(
+  vfs: { allFilePaths(): string[]; readTextFile(p: string): string }
+): Map<string, string> {
+  const guidMap = new Map<string, string>();
+  const GUID_PATTERN = /\{([0-9A-Fa-f]{16})\}([^\s"]+\.et)/g;
+  let catalogsRead = 0;
+
+  for (const path of vfs.allFilePaths()) {
+    const lower = path.toLowerCase();
+    if (!lower.endsWith(".conf")) continue;
+    if (!lower.includes("entitycatalog")) continue;
+
+    catalogsRead++;
+    let content: string;
+    try {
+      content = vfs.readTextFile(path);
+    } catch (e) {
+      logger.warn(`GUID index (VFS): failed to read ${path}: ${e}`);
+      continue;
+    }
+
+    let match: RegExpExecArray | null;
+    GUID_PATTERN.lastIndex = 0;
+    while ((match = GUID_PATTERN.exec(content)) !== null) {
+      const guid = match[1].toUpperCase();
+      const prefabPath = match[2].replace(/\\/g, "/");
+      const key = prefabPath.toLowerCase();
+      if (!guidMap.has(key)) {
+        guidMap.set(key, guid);
+      }
+    }
+  }
+
+  logger.info(`GUID index (VFS): ${guidMap.size} GUIDs from ${catalogsRead} pak catalogs`);
+  return guidMap;
+}
+
+function buildIndex(basePath: string, gamePath: string, modPaths: string[]): AssetEntry[] {
   const start = Date.now();
   const entries: AssetEntry[] = [];
   const seen = new Set<string>();
@@ -127,10 +167,28 @@ function buildIndex(basePath: string, gamePath: string): AssetEntry[] {
     logger.warn(`Failed to build GUID index: ${e}`);
   }
 
+  // Get the pak VFS once; both the GUID merge and the file walker reuse it.
+  const pakVfs = PakVirtualFS.get(gamePath, modPaths);
+
+  // Merge pak-catalog GUIDs on top of loose-catalog GUIDs (loose wins on duplicates).
+  if (pakVfs) {
+    try {
+      if (!guidMap) guidMap = new Map();
+      const pakGuids = extractGuidsFromPakCatalogs(pakVfs);
+      for (const [path, guid] of pakGuids) {
+        if (!guidMap.has(path)) {
+          guidMap.set(path, guid);
+        }
+      }
+      cachedGuidDiag = `${guidMap.size} GUIDs total (loose + pak catalogs)`;
+    } catch (e) {
+      logger.warn(`Failed to merge pak-catalog GUIDs: ${e}`);
+    }
+  }
+
   // 3. Add entries from .pak files (skip duplicates already found as loose files)
-  try {
-    const pakVfs = PakVirtualFS.get(gamePath);
-    if (pakVfs) {
+  if (pakVfs) {
+    try {
       for (const filePath of pakVfs.allFilePaths()) {
         if (seen.has(filePath.toLowerCase())) continue;
         const ext = extname(filePath).toLowerCase();
@@ -138,9 +196,9 @@ function buildIndex(basePath: string, gamePath: string): AssetEntry[] {
           entries.push({ path: filePath, ext: ext.slice(1) });
         }
       }
+    } catch (e) {
+      logger.warn(`Failed to index pak files: ${e}`);
     }
-  } catch (e) {
-    logger.warn(`Failed to index pak files: ${e}`);
   }
 
   // 4. Attach GUIDs to prefab entries
@@ -172,16 +230,17 @@ function buildIndex(basePath: string, gamePath: string): AssetEntry[] {
 
 export function invalidateAssetCache(): void {
   cachedIndex = null;
-  cachedBasePath = null;
+  cachedKey = null;
   cachedGuidDiag = "";
 }
 
-function getIndex(basePath: string, gamePath: string): AssetEntry[] {
-  if (cachedIndex && cachedBasePath === basePath) {
+function getIndex(basePath: string, gamePath: string, modPaths: string[]): AssetEntry[] {
+  const key = JSON.stringify([basePath, gamePath, ...modPaths]);
+  if (cachedIndex && cachedKey === key) {
     return cachedIndex;
   }
-  cachedIndex = buildIndex(basePath, gamePath);
-  cachedBasePath = basePath;
+  cachedIndex = buildIndex(basePath, gamePath, modPaths);
+  cachedKey = key;
   return cachedIndex;
 }
 
@@ -190,7 +249,8 @@ export function registerAssetSearch(server: McpServer, config: Config): void {
     "asset_search",
     {
       description:
-        "Search for base game assets (prefabs, models, textures, scripts, configs) by name. " +
+        "Search for game assets (prefabs, models, textures, scripts, configs) by name " +
+        "across the base game and any configured mod paks. " +
         "Searches both unpacked files and .pak archives transparently. " +
         "Returns file paths and GUIDs (for prefabs) that can be used in prefab references. " +
         "The first search may take a few seconds to build the file index.",
@@ -232,7 +292,7 @@ export function registerAssetSearch(server: McpServer, config: Config): void {
       }
 
       try {
-        const index = getIndex(basePath, config.gamePath);
+        const index = getIndex(basePath, config.gamePath, config.modPaths);
         const q = query.toLowerCase();
         const allowedExts = type !== "any" ? TYPE_FILTER[type] : null;
 
