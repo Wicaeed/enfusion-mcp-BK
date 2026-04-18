@@ -27,10 +27,27 @@ export interface Config {
    *  Automatically set at runtime when wb_launch opens a .gproj file.
    *  Can also be set via ENFUSION_DEFAULT_MOD env var as a static fallback. */
   defaultMod?: string;
+  /** Additional addon roots to merge into PakVirtualFS (workshop mods, extracted mods, etc.).
+   *  Each entry is a directory containing .pak files (or subdirectories of .pak files),
+   *  same shape as gamePath/addons. Discovered from default locations and overridable via
+   *  ENFUSION_MOD_PATHS env var (comma- or semicolon-separated). */
+  modPaths: string[];
 }
 
 const DEFAULT_WORKBENCH_PATH =
   "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Arma Reforger Tools";
+
+/** Probe well-known Reforger mod-pak locations under the user's home dir.
+ *  Returns only paths that exist, so CI/containers without Reforger installed
+ *  get an empty list, not fake entries. */
+function discoverDefaultModPaths(): string[] {
+  const home = homedir();
+  const candidates = [
+    join(home, "Documents", "My Games", "ArmaReforger", "addons"),
+    join(home, "Documents", "My Games", "ArmaReforgerWorkbench", "addons"),
+  ];
+  return candidates.filter((p) => existsSync(p));
+}
 
 const DEFAULTS: Config = {
   workbenchPath: DEFAULT_WORKBENCH_PATH,
@@ -49,6 +66,7 @@ const DEFAULTS: Config = {
   ),
   workbenchHost: "127.0.0.1",
   workbenchPort: 5775,
+  modPaths: [],
 };
 
 function loadJsonFile(path: string): Partial<Config> {
@@ -69,6 +87,9 @@ function loadJsonFile(path: string): Partial<Config> {
 export function loadConfig(): Config {
   // 1. Start with defaults
   const config = { ...DEFAULTS };
+
+  // Discover default mod paths (runs each call so tests can override HOME)
+  config.modPaths = discoverDefaultModPaths();
 
   // 2. Package-local config file
   const localConfigPath = resolve(
@@ -112,12 +133,23 @@ export function loadConfig(): Config {
   if (process.env.ENFUSION_DEFAULT_MOD) {
     config.defaultMod = process.env.ENFUSION_DEFAULT_MOD;
   }
+  if (process.env.ENFUSION_MOD_PATHS) {
+    config.modPaths = process.env.ENFUSION_MOD_PATHS
+      .split(/[,;]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
 
   // Auto-derive gamePath from workbenchPath if not explicitly set
   if (!process.env.ENFUSION_GAME_PATH && config.workbenchPath !== DEFAULT_WORKBENCH_PATH) {
     config.gamePath = resolve(config.workbenchPath, "..", "Arma Reforger");
   }
 
+  if (config.modPaths.length > 0) {
+    logger.info(`Mod paths (${config.modPaths.length}): ${config.modPaths.join(", ")}`);
+  } else {
+    logger.debug("No mod paths configured or discovered");
+  }
   logger.debug("Config loaded", config);
   return config;
 }
