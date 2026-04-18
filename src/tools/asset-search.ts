@@ -30,7 +30,7 @@ const TYPE_FILTER: Record<string, string[]> = {
 
 /** Cached file index — built once per session */
 let cachedIndex: AssetEntry[] | null = null;
-let cachedBasePath: string | null = null;
+let cachedKey: string | null = null;
 let cachedGuidDiag = "";
 
 /**
@@ -82,7 +82,7 @@ function buildGuidIndex(basePath: string): { guidMap: Map<string, string>; diag:
   return { guidMap, diag };
 }
 
-function buildIndex(basePath: string, gamePath: string): AssetEntry[] {
+function buildIndex(basePath: string, gamePath: string, modPaths: string[]): AssetEntry[] {
   const start = Date.now();
   const entries: AssetEntry[] = [];
   const seen = new Set<string>();
@@ -129,7 +129,7 @@ function buildIndex(basePath: string, gamePath: string): AssetEntry[] {
 
   // 3. Add entries from .pak files (skip duplicates already found as loose files)
   try {
-    const pakVfs = PakVirtualFS.get(gamePath);
+    const pakVfs = PakVirtualFS.get(gamePath, modPaths);
     if (pakVfs) {
       for (const filePath of pakVfs.allFilePaths()) {
         if (seen.has(filePath.toLowerCase())) continue;
@@ -172,16 +172,17 @@ function buildIndex(basePath: string, gamePath: string): AssetEntry[] {
 
 export function invalidateAssetCache(): void {
   cachedIndex = null;
-  cachedBasePath = null;
+  cachedKey = null;
   cachedGuidDiag = "";
 }
 
-function getIndex(basePath: string, gamePath: string): AssetEntry[] {
-  if (cachedIndex && cachedBasePath === basePath) {
+function getIndex(basePath: string, gamePath: string, modPaths: string[]): AssetEntry[] {
+  const key = JSON.stringify([basePath, gamePath, ...modPaths]);
+  if (cachedIndex && cachedKey === key) {
     return cachedIndex;
   }
-  cachedIndex = buildIndex(basePath, gamePath);
-  cachedBasePath = basePath;
+  cachedIndex = buildIndex(basePath, gamePath, modPaths);
+  cachedKey = key;
   return cachedIndex;
 }
 
@@ -190,7 +191,8 @@ export function registerAssetSearch(server: McpServer, config: Config): void {
     "asset_search",
     {
       description:
-        "Search for base game assets (prefabs, models, textures, scripts, configs) by name. " +
+        "Search for game assets (prefabs, models, textures, scripts, configs) by name " +
+        "across the base game and any configured mod paks. " +
         "Searches both unpacked files and .pak archives transparently. " +
         "Returns file paths and GUIDs (for prefabs) that can be used in prefab references. " +
         "The first search may take a few seconds to build the file index.",
@@ -232,7 +234,7 @@ export function registerAssetSearch(server: McpServer, config: Config): void {
       }
 
       try {
-        const index = getIndex(basePath, config.gamePath);
+        const index = getIndex(basePath, config.gamePath, config.modPaths);
         const q = query.toLowerCase();
         const allowedExts = type !== "any" ? TYPE_FILTER[type] : null;
 

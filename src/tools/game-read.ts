@@ -18,7 +18,7 @@ export function registerGameRead(server: McpServer, config: Config): void {
     "game_read",
     {
       description:
-        "Read a file from the base game data. " +
+        "Read a file from the base game data or from any configured mod paks. " +
         "Reads from both unpacked files and .pak archives transparently. " +
         "Use this to read vanilla .c script files to understand what to override, " +
         "or inspect prefab .et files and config .conf files.",
@@ -96,7 +96,7 @@ export function registerGameRead(server: McpServer, config: Config): void {
         }
 
         // Fall through to pak VFS
-        const pakVfs = PakVirtualFS.get(config.gamePath);
+        const pakVfs = PakVirtualFS.get(config.gamePath, config.modPaths);
         if (pakVfs && pakVfs.exists(subPath)) {
           const ext = extname(subPath).toLowerCase();
           if (!TEXT_EXTENSIONS.has(ext)) {

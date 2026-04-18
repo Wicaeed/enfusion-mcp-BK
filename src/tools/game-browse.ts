@@ -14,7 +14,8 @@ export function registerGameBrowse(server: McpServer, config: Config): void {
     "game_browse",
     {
       description:
-        "Browse base game data files (scripts, prefabs, configs). " +
+        "Browse game data files (scripts, prefabs, configs) from the base game " +
+        "and any configured mod paks (workshop mods, etc.). " +
         "Shows both unpacked files and contents of .pak archives transparently. " +
         "Do NOT try to use filesystem tools on the game install directory.",
       inputSchema: {
@@ -55,7 +56,7 @@ export function registerGameBrowse(server: McpServer, config: Config): void {
 
         // Merge entries from .pak archives
         try {
-          const pakVfs = PakVirtualFS.get(config.gamePath);
+          const pakVfs = PakVirtualFS.get(config.gamePath, config.modPaths);
           if (pakVfs) {
             const virtualPath = subPath || "";
             const pakEntries = pakVfs.listDir(virtualPath);
