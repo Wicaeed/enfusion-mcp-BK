@@ -15,6 +15,12 @@
 export interface EnfusionProperty {
   key: string;
   value: string | EnfusionNode;
+  /**
+   * For string values, whether the source was a quoted string (`"foo"`) or a bareword (`foo`).
+   * The parser populates this; when omitted on synthetic nodes the serializer defaults to quoted
+   * (real `.gproj`/`.et` files quote most string values — barewords only appear for enum literals).
+   */
+  quoted?: boolean;
 }
 
 /** A node in the Enfusion text tree */
@@ -297,7 +303,7 @@ class Parser {
             node.children.push(child);
           } else {
             // Key "value" — simple property
-            node.properties.push({ key: identTok.value, value: strTok.value });
+            node.properties.push({ key: identTok.value, value: strTok.value, quoted: true });
           }
         } else if (after.type === TokenType.Identifier) {
           // Could be: Key SubNode  (e.g., "Configurations" "GameProjectConfig PC { ... }")
@@ -336,11 +342,11 @@ class Parser {
               // Ident Ident "string" without brace — unusual
               // Treat first ident as key, rest as value
               this.pos = saved2;
-              node.properties.push({ key: identTok.value, value: ident2.value });
+              node.properties.push({ key: identTok.value, value: ident2.value, quoted: false });
             }
           } else {
             // Key BareValue — simple property with unquoted value
-            node.properties.push({ key: identTok.value, value: ident2.value });
+            node.properties.push({ key: identTok.value, value: ident2.value, quoted: false });
           }
         } else if (after.type === TokenType.OpenBrace) {
           // TypeName { ... } — child node with no ID
@@ -456,12 +462,20 @@ function serializeNode(node: EnfusionNode, indent: number): string {
   // Properties
   for (const prop of node.properties) {
     if (typeof prop.value === "string") {
-      // Emit bare (unquoted) values for numbers, booleans, and bare identifiers (enums like Manual, Runtime, None)
-      if (
-        /^-?\d+(\.\d+)?$/.test(prop.value) ||
-        prop.value === "true" || prop.value === "false" ||
-        /^[A-Za-z_][A-Za-z0-9_]*$/.test(prop.value)
-      ) {
+      // Round-trip preservation: respect the parser-recorded quoted flag when present.
+      // For synthetic nodes (no flag), default to quoted for strings — numbers and booleans
+      // are always emitted bare. Enum values require explicit `quoted: false`.
+      const isNumeric = /^-?\d+(\.\d+)?$/.test(prop.value);
+      const isBoolean = prop.value === "true" || prop.value === "false";
+      let emitBare: boolean;
+      if (prop.quoted === true) {
+        emitBare = false;
+      } else if (prop.quoted === false) {
+        emitBare = true;
+      } else {
+        emitBare = isNumeric || isBoolean;
+      }
+      if (emitBare) {
         parts.push(`${innerPad}${prop.key} ${prop.value}`);
       } else {
         parts.push(`${innerPad}${prop.key} "${escapeString(prop.value)}"`);
