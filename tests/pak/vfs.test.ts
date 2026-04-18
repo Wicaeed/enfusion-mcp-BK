@@ -123,13 +123,13 @@ beforeAll(() => {
 
   // Reset singleton between test runs
   (PakVirtualFS as any).instance = null;
-  (PakVirtualFS as any).instanceGamePath = null;
+  (PakVirtualFS as any).instanceKey = null;
 });
 
 afterAll(() => {
   // Reset singleton
   (PakVirtualFS as any).instance = null;
-  (PakVirtualFS as any).instanceGamePath = null;
+  (PakVirtualFS as any).instanceKey = null;
   rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
@@ -220,5 +220,70 @@ describe("PakVirtualFS", () => {
     const a = PakVirtualFS.get(GAME_DIR);
     const b = PakVirtualFS.get(GAME_DIR);
     expect(a).toBe(b);
+  });
+});
+
+describe("PakVirtualFS — multi-root merging", () => {
+  const MOD_TEST_DIR = join(tmpdir(), "enfusion-mcp-vfs-mod-test-" + process.pid);
+  const MOD_GAME_DIR = join(MOD_TEST_DIR, "game");
+  const MOD_GAME_ADDONS = join(MOD_GAME_DIR, "addons");
+  const MOD_ROOT = join(MOD_TEST_DIR, "mods");
+
+  beforeAll(() => {
+    mkdirSync(MOD_GAME_ADDONS, { recursive: true });
+    mkdirSync(MOD_ROOT, { recursive: true });
+
+    const basePak = buildTestPak([
+      { path: "Prefabs/vanilla.et", content: "vanilla", compress: false },
+    ]);
+    writeFileSync(join(MOD_GAME_ADDONS, "base.pak"), basePak);
+
+    const modPak = buildTestPak([
+      { path: "Prefabs/rhs_weapon.et", content: "rhs", compress: false },
+    ]);
+    writeFileSync(join(MOD_ROOT, "rhs.pak"), modPak);
+
+    (PakVirtualFS as any).instance = null;
+    (PakVirtualFS as any).instanceKey = null;
+  });
+
+  afterAll(() => {
+    (PakVirtualFS as any).instance = null;
+    (PakVirtualFS as any).instanceKey = null;
+    rmSync(MOD_TEST_DIR, { recursive: true, force: true });
+  });
+
+  it("indexes files from both base game and mod roots", () => {
+    const vfs = PakVirtualFS.get(MOD_GAME_DIR, [MOD_ROOT])!;
+    expect(vfs).not.toBeNull();
+    expect(vfs.exists("Prefabs/vanilla.et")).toBe(true);
+    expect(vfs.exists("Prefabs/rhs_weapon.et")).toBe(true);
+  });
+
+  it("base game paks take precedence on name collision", () => {
+    const COLLIDE_DIR = join(MOD_TEST_DIR, "collide");
+    mkdirSync(COLLIDE_DIR, { recursive: true });
+    const overridePak = buildTestPak([
+      { path: "Prefabs/vanilla.et", content: "overridden-by-mod", compress: false },
+    ]);
+    writeFileSync(join(COLLIDE_DIR, "override.pak"), overridePak);
+
+    (PakVirtualFS as any).instance = null;
+    (PakVirtualFS as any).instanceKey = null;
+
+    const vfs = PakVirtualFS.get(MOD_GAME_DIR, [COLLIDE_DIR])!;
+    expect(vfs.readTextFile("Prefabs/vanilla.et")).toBe("vanilla");
+  });
+
+  it("caches per (gamePath, modPaths) key", () => {
+    (PakVirtualFS as any).instance = null;
+    (PakVirtualFS as any).instanceKey = null;
+
+    const a = PakVirtualFS.get(MOD_GAME_DIR, [MOD_ROOT]);
+    const b = PakVirtualFS.get(MOD_GAME_DIR, [MOD_ROOT]);
+    expect(a).toBe(b);
+
+    const c = PakVirtualFS.get(MOD_GAME_DIR, []);
+    expect(c).not.toBe(a);
   });
 });
