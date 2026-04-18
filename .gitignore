@@ -7,4 +7,5 @@ enfusion-mcp.config.json
 *.tsbuildinfo
 *.pdf
 .claude/
+.worktrees/
 nul

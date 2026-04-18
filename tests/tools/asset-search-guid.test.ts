@@ -2,9 +2,12 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { deflateRawSync } from "node:zlib";
+import { deflateSync } from "node:zlib";
 import { PakVirtualFS } from "../../src/pak/vfs.js";
 import { extractGuidsFromPakCatalogs } from "../../src/tools/asset-search.js";
+
+// DATA payload starts at: FORM(12) + HEAD header(8) + HEAD payload(0x1c) + DATA header(8) = 56.
+const DATA_PAYLOAD_START = 56;
 
 // Synthetic pak builder — same helper as tests/pak/vfs.test.ts.
 // Copy-pasted rather than imported to keep the test file self-contained.
@@ -12,11 +15,12 @@ function buildTestPak(files: Array<{ path: string; content: string; compress: bo
   interface TreeFile { name: string; offset: number; compressedLen: number; decompressedLen: number; compressed: boolean }
   interface TreeDir { name: string; children: Map<string, TreeDir | TreeFile> }
   const dataChunks: Buffer[] = [];
-  let dataOffset = 0;
+  // Offsets are absolute file positions.
+  let dataOffset = DATA_PAYLOAD_START;
   const root: TreeDir = { name: "", children: new Map() };
   for (const file of files) {
     const raw = Buffer.from(file.content, "utf-8");
-    const stored = file.compress ? deflateRawSync(raw) : raw;
+    const stored = file.compress ? deflateSync(raw) : raw;
     const parts = file.path.split("/");
     const fileName = parts.pop()!;
     let dir = root;

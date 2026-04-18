@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { deflateSync } from "node:zlib";
 import { parsePakIndex } from "../../src/pak/reader.js";
 
+// DATA payload starts at: FORM(12) + HEAD header(8) + HEAD payload(0x1c) + DATA header(8) = 56.
+const DATA_PAYLOAD_START = 56;
+
 /**
  * Build a minimal synthetic .pak file in memory.
  *
@@ -16,8 +19,9 @@ import { parsePakIndex } from "../../src/pak/reader.js";
  */
 function buildTestPak(files: Array<{ path: string; content: string; compress: boolean }>): Buffer {
   // ── Build DATA payload and FILE tree simultaneously ────────────────────
+  // Offsets in the FILE chunk are absolute file positions, not relative to DATA.
   const dataChunks: Buffer[] = [];
-  let dataOffset = 0;
+  let dataOffset = DATA_PAYLOAD_START;
 
   interface TreeFile {
     name: string;

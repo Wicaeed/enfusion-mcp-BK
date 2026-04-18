@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { deflateRawSync } from "node:zlib";
+import { deflateSync } from "node:zlib";
 import { PakVirtualFS } from "../../src/pak/vfs.js";
+
+// DATA payload starts at: FORM(12) + HEAD header(8) + HEAD payload(0x1c) + DATA header(8) = 56.
+const DATA_PAYLOAD_START = 56;
 
 /**
  * Build a minimal synthetic .pak file (same helper as reader.test.ts).
@@ -13,12 +16,13 @@ function buildTestPak(files: Array<{ path: string; content: string; compress: bo
   interface TreeDir { name: string; children: Map<string, TreeDir | TreeFile> }
 
   const dataChunks: Buffer[] = [];
-  let dataOffset = 0;
+  // Offsets are absolute file positions, not relative to the DATA chunk payload.
+  let dataOffset = DATA_PAYLOAD_START;
   const root: TreeDir = { name: "", children: new Map() };
 
   for (const file of files) {
     const raw = Buffer.from(file.content, "utf-8");
-    const stored = file.compress ? deflateRawSync(raw) : raw;
+    const stored = file.compress ? deflateSync(raw) : raw;
 
     const parts = file.path.split("/");
     const fileName = parts.pop()!;
@@ -191,6 +195,25 @@ describe("PakVirtualFS", () => {
     const vfs = PakVirtualFS.get(GAME_DIR)!;
     const content = vfs.readTextFile("Scripts/Game/vehicle.c");
     expect(content).toBe("class Vehicle {}");
+  });
+
+  // Regression: issue #11. Real Enfusion paks store compressed entries as
+  // zlib-wrapped deflate (first two bytes 0x78 0x9c), with each FILE entry's
+  // offset being an absolute byte position in the .pak — not relative to the
+  // DATA chunk payload. The original implementation assumed raw deflate and
+  // relative offsets, so every compressed read on a real workshop pak failed
+  // with zlib errors like "invalid stored block lengths".
+  it("stores compressed entries as zlib-wrapped deflate with absolute offsets (issue #11)", () => {
+    const pakBytes = readFileSync(join(ADDONS_DIR, "scripts.pak"));
+    const vfs = PakVirtualFS.get(GAME_DIR)!;
+    const ref = (vfs as any).fileIndex.get("Scripts/Game/vehicle.c");
+    expect(ref).toBeDefined();
+    expect(ref.entry.compressed).toBe(true);
+    // The offset must be an absolute file position — always >= DATA_PAYLOAD_START.
+    expect(ref.entry.offset).toBeGreaterThanOrEqual(DATA_PAYLOAD_START);
+    // At that position, the first two bytes must be a zlib header.
+    expect(pakBytes[ref.entry.offset]).toBe(0x78);
+    expect(pakBytes[ref.entry.offset + 1]).toBe(0x9c);
   });
 
   it("reads file as buffer", () => {
