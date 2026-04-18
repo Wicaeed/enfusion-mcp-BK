@@ -1,6 +1,6 @@
 import { openSync, readSync, closeSync, readdirSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
-import { inflateRawSync } from "node:zlib";
+import { inflateSync } from "node:zlib";
 import { parsePakIndex, type PakIndex, type PakDirEntry, type PakFileEntry } from "./reader.js";
 import { logger } from "../utils/logger.js";
 
@@ -15,7 +15,6 @@ export interface VfsEntry {
 
 interface FileRef {
   pakPath: string;
-  dataStart: number;
   entry: PakFileEntry;
 }
 
@@ -135,14 +134,13 @@ export class PakVirtualFS {
       throw new Error(`File not found in pak: ${virtualPath}`);
     }
 
-    const { pakPath, dataStart, entry } = ref;
+    const { pakPath, entry } = ref;
     const readLen = entry.compressed ? entry.compressedLen : entry.decompressedLen;
 
     const fd = openSync(pakPath, "r");
     try {
       const buf = Buffer.alloc(readLen);
-      const position = dataStart + entry.offset;
-      const bytesRead = readSync(fd, buf, 0, readLen, position);
+      const bytesRead = readSync(fd, buf, 0, readLen, entry.offset);
       if (bytesRead < readLen) {
         throw new Error(
           `Truncated read from pak: expected ${readLen} bytes, got ${bytesRead}`
@@ -150,7 +148,7 @@ export class PakVirtualFS {
       }
 
       if (entry.compressed) {
-        return inflateRawSync(buf);
+        return inflateSync(buf);
       }
       return buf;
     } finally {
@@ -212,7 +210,6 @@ export class PakVirtualFS {
           target.children.set(name, child);
           this.fileIndex.set(norm, {
             pakPath: index.pakPath,
-            dataStart: index.dataStart,
             entry: child,
           });
           count++;

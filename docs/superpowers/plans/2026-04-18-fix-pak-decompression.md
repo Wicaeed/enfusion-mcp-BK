@@ -159,6 +159,37 @@ This finding is the input to Phase 2. Do not proceed to Phase 2 without it.
 
 ---
 
+## Phase 1 Finding
+
+Two bugs, not one. The plan's original Phase 1 script (testing zlib variants on bytes at `dataStart + entry.offset`) couldn't decompress at any offset 0..32, which pointed suspiciously at Branch C. A second probe comparing offsets against file size revealed the real issue.
+
+**Bug 1: offset is absolute, not relative to DATA.**
+- Reference: PakInspector's kaitai parser (`Pak.g.cs` line 237) seeks `io.Seek(Offset)` on the root stream — an absolute file position.
+- Our reader: `src/pak/vfs.ts:144` reads from `dataStart + entry.offset`, adding `dataStart` on top of an offset that already includes it.
+- Empirical check: on RCD's `data.pak`, `dataStart = 56` and the first file's `offset = 56`. Next file's offset = 4362 = 56 + 4306 (previous file's `compressedLen`). Sequential absolute byte positions, not relative.
+- Effect: every read is 56 bytes past the real start of the entry — which is why the bytes never decompressed in the diagnostic.
+
+**Bug 2: compressed entries are zlib-wrapped deflate, not raw deflate.**
+- First 8 bytes of a real compressed entry (SAL_DroneSignalComponent.c at correct absolute offset): `78 9c ad 58 5b 6f db 36`. The `78 9c` prefix is the standard zlib header (deflate, default compression).
+- Reference: PakInspector `PakExtractCommand.cs` explicitly skips 2 bytes then uses `DeflateStream` (which is raw deflate) — equivalent to Node's `inflateSync` (which handles the zlib wrapper).
+- Our reader: `src/pak/vfs.ts:153` calls `inflateRawSync(buf)`, producing "invalid stored block lengths" et al. because the first 2 bytes are zlib header, not deflate blocks.
+- The synthetic test fixtures happened to use `deflateRawSync`/relative offsets, so tests all passed despite both bugs.
+
+**Fix:** Branch A (swap `inflateRawSync` → `inflateSync`) PLUS offset correction (read from `entry.offset` directly). Test fixtures must also be updated to use absolute offsets and `deflateSync` so they actually exercise the real format.
+
+**Verification:**
+```
+$ npx tsx scripts/verify-fix.ts
+=== scripts/Game/Drone/DroneComponents/SAL_DroneSignalComponent.c
+  offset=110665902 cLen=1809 dLen=5897
+  first 8 bytes: 789cad585b6fdb36
+  inflateRaw: FAIL invalid stored block lengths
+  inflate (zlib): OK 5897 bytes (expected 5897) ✓
+    first 100 chars: "class SAL_DroneSignalComponentClass: ScriptComponentClass\r\n{\r\n}..."
+```
+
+---
+
 ## Phase 2: Implement the Fix
 
 Only execute the branch matching the Phase 1 finding. Strike through the branches that do not apply.

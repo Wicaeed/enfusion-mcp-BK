@@ -6,7 +6,7 @@ import { logger } from "../utils/logger.js";
 export interface PakFileEntry {
   kind: "file";
   name: string;
-  /** Byte offset of this file's data within the DATA chunk payload */
+  /** Absolute byte position of this file's data in the .pak file */
   offset: number;
   compressedLen: number;
   decompressedLen: number;
@@ -21,8 +21,6 @@ export interface PakDirEntry {
 
 export interface PakIndex {
   root: PakDirEntry;
-  /** Absolute byte position in the .pak file where the DATA payload starts */
-  dataStart: number;
   /** Path to the .pak file on disk */
   pakPath: string;
 }
@@ -63,7 +61,6 @@ export function parsePakIndex(pakPath: string): PakIndex {
     // Chunks start at offset 12 (after FORM header).
     // Each chunk: magic (4B BE) + size (4B BE) + payload (size bytes).
     let pos = 12;
-    let dataStart = -1;
     let fileChunkOffset = -1;
     let fileChunkLen = 0;
 
@@ -79,27 +76,20 @@ export function parsePakIndex(pakPath: string): PakIndex {
         );
       }
 
-      if (magic === MAGIC_HEAD) {
-        // Skip HEAD chunk entirely
-        pos += 8 + chunkLen;
-      } else if (magic === MAGIC_DATA) {
-        // Record where the DATA payload begins (right after its 8-byte header)
-        dataStart = pos + 8;
-        pos += 8 + chunkLen;
-      } else if (magic === MAGIC_FILE) {
+      if (magic === MAGIC_FILE) {
         fileChunkOffset = pos + 8;
         fileChunkLen = chunkLen;
         break; // FILE is the last chunk we care about
       } else {
-        // Unknown chunk — skip it
-        logger.debug(`PAK unknown chunk 0x${magic.toString(16)} at offset ${pos}, skipping`);
+        // HEAD / DATA / unknown — skip. File entries carry absolute offsets
+        // into the .pak, so we don't need to track where DATA begins.
+        if (magic !== MAGIC_HEAD && magic !== MAGIC_DATA) {
+          logger.debug(`PAK unknown chunk 0x${magic.toString(16)} at offset ${pos}, skipping`);
+        }
         pos += 8 + chunkLen;
       }
     }
 
-    if (dataStart < 0) {
-      throw new Error("PAK file missing DATA chunk");
-    }
     if (fileChunkOffset < 0) {
       throw new Error("PAK file missing FILE chunk");
     }
@@ -108,7 +98,7 @@ export function parsePakIndex(pakPath: string): PakIndex {
     const fileBuf = readAt(fd, fileChunkOffset, fileChunkLen);
     const root = parseFileTree(fileBuf);
 
-    return { root, dataStart, pakPath };
+    return { root, pakPath };
   } finally {
     closeSync(fd);
   }
