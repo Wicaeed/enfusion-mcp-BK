@@ -182,9 +182,9 @@ Config can also be loaded from `~/.enfusion-mcp/config.json`. Environment variab
 - `~/Documents/My Games/ArmaReforgerWorkbench/addons` — Workbench workshop cache
 
 **Explicit override:** Set via either
-- Env var `ENFUSION_MOD_PATHS` (comma- or semicolon-separated):
+- Env var `REFORGER_MOD_PATHS` (comma- or semicolon-separated):
   ```bash
-  ENFUSION_MOD_PATHS="/path/to/mods1,/path/to/mods2"
+  REFORGER_MOD_PATHS="/path/to/mods1,/path/to/mods2"
   ```
 - JSON config `modPaths` array (see `enfusion-mcp.config.example.json`).
 
@@ -198,12 +198,12 @@ Explicit config overrides discovery. The resolved list is logged at startup.
 ## Development
 
 ```bash
-git clone https://github.com/steffenbk/enfusion-mcp-BK.git
+git clone https://github.com/Wicaeed/enfusion-mcp-BK.git
 cd enfusion-mcp-BK
 npm install
 npm run scrape   # Build API index from Workbench docs
 npm run build
-npm test         # 187 tests
+npm test         # 455 tests
 ```
 
 ## License

@@ -1,6 +1,6 @@
 {
   "name": "enfusion-mcp",
-  "version": "0.10.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "MCP server for Arma Reforger / Enfusion engine modding — create mods from natural language",
   "bin": {
@@ -43,9 +43,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/steffenbk/enfusion-mcp-BK.git"
+    "url": "https://github.com/Wicaeed/enfusion-mcp-BK.git"
   },
-  "homepage": "https://github.com/steffenbk/enfusion-mcp-BK",
+  "homepage": "https://github.com/Wicaeed/enfusion-mcp-BK",
+  "bugs": {
+    "url": "https://github.com/Wicaeed/enfusion-mcp-BK/issues"
+  },
   "license": "MIT",
   "keywords": [
     "mcp",

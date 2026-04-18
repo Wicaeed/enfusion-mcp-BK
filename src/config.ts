@@ -30,7 +30,7 @@ export interface Config {
   /** Additional addon roots to merge into PakVirtualFS (workshop mods, extracted mods, etc.).
    *  Each entry is a directory containing .pak files (or subdirectories of .pak files),
    *  same shape as gamePath/addons. Discovered from default locations and overridable via
-   *  ENFUSION_MOD_PATHS env var (comma- or semicolon-separated). */
+   *  REFORGER_MOD_PATHS env var (comma- or semicolon-separated). */
   modPaths: string[];
 }
 
@@ -133,8 +133,8 @@ export function loadConfig(): Config {
   if (process.env.ENFUSION_DEFAULT_MOD) {
     config.defaultMod = process.env.ENFUSION_DEFAULT_MOD;
   }
-  if (process.env.ENFUSION_MOD_PATHS) {
-    config.modPaths = process.env.ENFUSION_MOD_PATHS
+  if (process.env.REFORGER_MOD_PATHS) {
+    config.modPaths = process.env.REFORGER_MOD_PATHS
       .split(/[,;]/)
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
