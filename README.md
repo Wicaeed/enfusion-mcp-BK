@@ -87,7 +87,7 @@ For complex mods, a `MODPLAN.md` is written to the project root tracking the ful
 
 ### Offline Tools
 
-Work without Workbench running — API search, mod scaffolding, code generation, validation, and building.
+Work without Workbench running — API search, Arma Reforger Workbench mod inspection, mod scaffolding, code generation, validation, and building.
 
 | Tool | What it does |
 |------|-------------|
@@ -170,12 +170,13 @@ All optional. Sensible defaults are used when nothing is set.
 | `ENFUSION_GAME_PATH` | Path to the Arma Reforger game install (used as CWD when launching Workbench so base-game addons resolve correctly) | Auto-detected from sibling of `ENFUSION_WORKBENCH_PATH` |
 | `ENFUSION_WORKBENCH_HOST` | NET API host | `127.0.0.1` |
 | `ENFUSION_WORKBENCH_PORT` | NET API port | `5775` |
+| `REFORGER_MOD_PATHS` | Workshop mod paths (overrides auto-discovery) | Auto-discovered |
 
 Config can also be loaded from `~/.enfusion-mcp/config.json`. Environment variables take priority.
 
-### Third-party mod support
+## Mod Development & Research
 
-`enfusion-mcp` can browse, read, and search `.pak` files from installed workshop mods in addition to the base game. Mod paks are layered on top of the base game — base game paks take precedence on any path collisions.
+`enfusion-mcp` can browse, read, and search `.pak` files from your installed Arma Reforger workshop mods directory, in addition to the base game. Mod paks are layered on top of the base game — base game paks take precedence on any path collisions.
 
 **Automatic discovery (default):** On startup, `enfusion-mcp` probes these paths and uses whichever exist:
 - `~/Documents/My Games/ArmaReforger/addons` — game client's workshop cache
