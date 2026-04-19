@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, execSync } from "node:child_process";
 import { encodeRequest, decodeResponse } from "./protocol.js";
 import { logger } from "../utils/logger.js";
+import { crossPlatformDirname, toNativePath } from "../utils/platform-path.js";
 import type { Config } from "../config.js";
 import { generateGproj } from "../templates/gproj.js";
 
@@ -388,7 +389,7 @@ export class WorkbenchClient {
     // Inject into the currently-open mod (same logic as launchWorkbench).
     const recoveryGproj = this.findFallbackGproj();
     if (recoveryGproj) {
-      this.installHandlerScripts(dirname(recoveryGproj), true);
+      this.installHandlerScripts(toNativePath(crossPlatformDirname(recoveryGproj)), true);
       this.cleanupStandaloneAddon();
     } else {
       this.installHandlerScripts(undefined, true);
@@ -443,7 +444,10 @@ export class WorkbenchClient {
     //    never be compiled unless the user's project explicitly depends on it.
     let resolvedGproj = gprojPath || this.findFallbackGproj();
     if (resolvedGproj) {
-      this.installHandlerScripts(dirname(resolvedGproj));
+      // gprojPath may be a Windows path (C:\…) even when running on WSL —
+      // use cross-platform parsing + translate to /mnt/<drive>/… so Node's
+      // fs APIs can write the handler scripts into the right directory.
+      this.installHandlerScripts(toNativePath(crossPlatformDirname(resolvedGproj)));
       // Remove any leftover standalone addon to prevent duplicate class errors.
       // If a previous session created {projectPath}/EnfusionMCP/ it would be
       // picked up as a sibling addon and cause compile-time class name conflicts.
