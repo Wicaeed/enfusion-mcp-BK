@@ -2,7 +2,6 @@
   "workbenchPath": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Arma Reforger Tools",
   "projectPath": "C:\\Users\\YourName\\Documents\\My Games\\ArmaReforgerWorkbench\\addons",
   "modPaths": [
-    "C:\\Users\\YourName\\Documents\\My Games\\ArmaReforger\\addons",
-    "C:\\Users\\YourName\\Documents\\My Games\\ArmaReforgerWorkbench\\addons"
+    "C:\\Users\\YourName\\Documents\\My Games\\ArmaReforger\\addons"
   ]
 }
