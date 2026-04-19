@@ -5,6 +5,11 @@ import { existsSync, readdirSync } from "node:fs";
 import type { Config } from "../config.js";
 import type { WorkbenchClient } from "../workbench/client.js";
 import { formatConnectionStatus } from "../workbench/status.js";
+import {
+  crossPlatformBasename,
+  crossPlatformDirname,
+  toNativePath,
+} from "../utils/platform-path.js";
 
 export function registerWbLaunch(
   server: McpServer,
@@ -34,9 +39,11 @@ export function registerWbLaunch(
     },
     async ({ gprojPath }) => {
       try {
-        // Remember which addon was requested so other tools default to it
+        // Remember which addon was requested so other tools default to it.
+        // gprojPath may be a Windows path even on Linux (WSL) — use
+        // cross-platform parsing so we don't collapse `C:\…` to `.`.
         if (gprojPath) {
-          config.defaultMod = basename(dirname(resolve(gprojPath)));
+          config.defaultMod = crossPlatformBasename(crossPlatformDirname(gprojPath));
         }
 
         const alreadyRunning = await client.ping();
@@ -53,7 +60,9 @@ export function registerWbLaunch(
 
         await client.ensureRunning(gprojPath);
 
-        const modDir = gprojPath ? dirname(resolve(gprojPath)) : null;
+        // Show the user where handlers actually landed (translated WSL path
+        // when a Windows gproj was supplied on Linux).
+        const modDir = gprojPath ? toNativePath(crossPlatformDirname(gprojPath)) : null;
         const note = modDir
           ? `\n\nNote: Handler scripts were copied to ${modDir}/Scripts/WorkbenchGame/EnfusionMCP/. ` +
             `Call **wb_cleanup** with the mod directory path when done to remove them before publishing.`
